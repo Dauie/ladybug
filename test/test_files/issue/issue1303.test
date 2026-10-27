@@ -1,0 +1,36 @@
+-DATASET CSV empty
+-SKIP_IN_MEM
+--
+
+-CASE UpdateStaysOnItsRowWhenCheckpointRunsWithReaderOpen
+-CHECKPOINT_WAIT_TIMEOUT 10000
+-STATEMENT CALL auto_checkpoint=false;
+---- ok
+-STATEMENT CREATE NODE TABLE P(id INT64, v INT64, PRIMARY KEY(id));
+---- ok
+-STATEMENT UNWIND range(0, 2199) AS i CREATE (:P {id: i, v: i});
+---- ok
+-STATEMENT CHECKPOINT;
+---- ok
+-STATEMENT MATCH (p:P {id: 2049}) SET p.v = -1;
+---- ok
+-CREATE_CONNECTION conn_reader
+-STATEMENT [conn_reader] BEGIN TRANSACTION READ ONLY;
+---- ok
+-STATEMENT CHECKPOINT;
+---- ok
+-STATEMENT MATCH (p:P) WHERE p.id IN [1, 2049] RETURN p.id, p.v ORDER BY p.id;
+---- 2
+1|1
+2049|-1
+-STATEMENT [conn_reader] MATCH (p:P) WHERE p.id IN [1, 2049] RETURN p.id, p.v ORDER BY p.id;
+---- 2
+1|1
+2049|-1
+-STATEMENT [conn_reader] COMMIT;
+---- ok
+-RELOADDB
+-STATEMENT MATCH (p:P) WHERE p.id IN [1, 2049] RETURN p.id, p.v ORDER BY p.id;
+---- 2
+1|1
+2049|-1
