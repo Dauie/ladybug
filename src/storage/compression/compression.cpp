@@ -74,9 +74,18 @@ auto getTypedMinMax(std::span<const T> data, const NullMask* nullMask, uint64_t 
             }
             fallbackToFirstIfAllNaN(min, max, first);
         } else {
-            auto [minRaw, maxRaw] = std::minmax_element(data.begin(), data.end());
-            min = StorageValue(*minRaw);
-            max = StorageValue(*maxRaw);
+            // A plain fold rather than std::minmax_element: MSVC's vectorized
+            // implementation returns wrong elements for some 1-byte inputs (gh-1447).
+            // These bounds select CONSTANT and set the bit-packing frame, so a wrong
+            // value silently corrupts the chunk on flush.
+            T minRaw = data[0];
+            T maxRaw = data[0];
+            for (const auto value : data) {
+                minRaw = value < minRaw ? value : minRaw;
+                maxRaw = value > maxRaw ? value : maxRaw;
+            }
+            min = StorageValue(minRaw);
+            max = StorageValue(maxRaw);
         }
     } else {
         if constexpr (std::floating_point<T>) {
