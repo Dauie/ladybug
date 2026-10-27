@@ -1,0 +1,119 @@
+-DATASET CSV empty
+-SKIP_IN_MEM
+--
+
+-CASE StringBytesSurviveCheckpoint
+-STATEMENT CREATE NODE TABLE T(id INT64, s STRING, PRIMARY KEY(id));
+---- ok
+-STATEMENT CREATE (:T {id: 1, s: repeat('ab', 8192)});
+---- ok
+-STATEMENT CREATE (:T {id: 2, s: 'second'});
+---- ok
+-STATEMENT CHECKPOINT;
+---- ok
+-STATEMENT MATCH (t:T) RETURN t.id, t.s = repeat('ab', 8192), size(t.s) ORDER BY t.id;
+---- 2
+1|True|16384
+2|False|6
+-STATEMENT MATCH (t:T {id: 2}) RETURN t.s;
+---- 1
+second
+-RELOADDB
+-STATEMENT MATCH (t:T) RETURN t.id, t.s = repeat('ab', 8192), size(t.s) ORDER BY t.id;
+---- 2
+1|True|16384
+2|False|6
+-STATEMENT MATCH (t:T {id: 2}) RETURN t.s;
+---- 1
+second
+
+-CASE Utf8StringBytesSurviveCheckpoint
+-STATEMENT CREATE NODE TABLE N(id INT64, body STRING, PRIMARY KEY(id));
+---- ok
+-STATEMENT CREATE (:N {id: 1, body: repeat('é', 8192)});
+---- ok
+-STATEMENT CREATE (:N {id: 2, body: 'second'});
+---- ok
+-STATEMENT CHECKPOINT;
+---- ok
+-STATEMENT MATCH (n:N) RETURN n.id, n.body = repeat('é', 8192), size(n.body) ORDER BY n.id;
+---- 2
+1|True|8192
+2|False|6
+-STATEMENT MATCH (n:N {id: 2}) RETURN n.body;
+---- 1
+second
+-RELOADDB
+-STATEMENT MATCH (n:N) RETURN n.id, n.body = repeat('é', 8192), size(n.body) ORDER BY n.id;
+---- 2
+1|True|8192
+2|False|6
+-STATEMENT MATCH (n:N {id: 2}) RETURN n.body;
+---- 1
+second
+
+-CASE UInt8ColumnSurvivesCheckpoint
+-STATEMENT CREATE NODE TABLE U(id INT64, v UINT8, PRIMARY KEY(id));
+---- ok
+-STATEMENT UNWIND range(0, 16383) AS i CREATE (:U {id: i, v: CAST(97 + i % 2 AS UINT8)});
+---- ok
+-STATEMENT CREATE (:U {id: 16384, v: CAST(115 AS UINT8)}), (:U {id: 16385, v: CAST(101 AS UINT8)}), (:U {id: 16386, v: CAST(99 AS UINT8)}), (:U {id: 16387, v: CAST(111 AS UINT8)}), (:U {id: 16388, v: CAST(110 AS UINT8)}), (:U {id: 16389, v: CAST(100 AS UINT8)});
+---- ok
+-STATEMENT CHECKPOINT;
+---- ok
+-STATEMENT MATCH (u:U) RETURN u.v, count(*) ORDER BY u.v;
+---- 8
+97|8192
+98|8192
+99|1
+100|1
+101|1
+110|1
+111|1
+115|1
+-RELOADDB
+-STATEMENT MATCH (u:U) RETURN u.v, count(*) ORDER BY u.v;
+---- 8
+97|8192
+98|8192
+99|1
+100|1
+101|1
+110|1
+111|1
+115|1
+
+-CASE UInt8ColumnWithLowTailSurvivesCheckpoint
+-STATEMENT CREATE NODE TABLE L(id INT64, v UINT8, PRIMARY KEY(id));
+---- ok
+-STATEMENT UNWIND range(0, 16383) AS i CREATE (:L {id: i, v: CAST(97 + i % 2 AS UINT8)});
+---- ok
+-STATEMENT UNWIND range(0, 9) AS i CREATE (:L {id: 16384 + i, v: CAST(48 + i AS UINT8)});
+---- ok
+-STATEMENT CHECKPOINT;
+---- ok
+-STATEMENT MATCH (l:L) WHERE l.id >= 16384 RETURN l.v ORDER BY l.id;
+---- 10
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+-RELOADDB
+-STATEMENT MATCH (l:L) WHERE l.id >= 16384 RETURN l.v ORDER BY l.id;
+---- 10
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
