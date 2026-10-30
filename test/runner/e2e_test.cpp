@@ -374,7 +374,7 @@ private:
     }
 };
 
-void parseAndRegisterTestGroup(const std::string& path, bool generateTestList = false) {
+void parseAndRegisterTestGroup(const std::string& path, std::ostream* testList = nullptr) {
     // Check for invalid characters in the file name (see ISSUE 4510)
     auto filename = std::filesystem::path(path).filename().string();
     if (filename.find('-') != std::string::npos) {
@@ -394,9 +394,8 @@ void parseAndRegisterTestGroup(const std::string& path, bool generateTestList = 
             if (testCaseName.find('-') != std::string::npos) {
                 throw TestException("Invalid test case name containing '-': " + testCaseName);
             }
-            if (generateTestList) {
-                std::ofstream testList(TestHelper::getTestListFile(), std::ios_base::app);
-                testList << testGroup->group + "." + testCaseName + " " + path + "\n";
+            if (testList != nullptr) {
+                *testList << testGroup->group + "." + testCaseName + " " + path + "\n";
             }
             if (empty(testCaseName)) {
                 throw TestException("Missing test case name (-CASE) [" + path + "].");
@@ -422,7 +421,9 @@ void parseAndRegisterTestGroup(const std::string& path, bool generateTestList = 
     }
 }
 
-void scanTestFiles(const std::string& path) {
+// The test list is shared by every build directory and read by every test process, so only test
+// discovery may write it. Under ctest -j, processes appending to it at once leave torn lines.
+void scanTestFiles(const std::string& path, std::ostream* testList = nullptr) {
     if (std::filesystem::is_regular_file(path)) {
         parseAndRegisterTestGroup(path);
         return;
@@ -430,7 +431,7 @@ void scanTestFiles(const std::string& path) {
     for (const auto& entry : std::filesystem::recursive_directory_iterator(path)) {
         if (!entry.is_regular_file() || std::filesystem::path(entry).extension() != ".test")
             continue;
-        parseAndRegisterTestGroup(entry.path().string(), true);
+        parseAndRegisterTestGroup(entry.path().string(), testList);
     }
 }
 
@@ -439,7 +440,8 @@ std::string findTestFile(const std::string& testCase) {
     std::string line;
     while (std::getline(infile, line)) {
         std::vector token = StringUtils::splitBySpace(line);
-        if (token[0] == testCase) {
+        // Another build's discovery may be rewriting the list; a partial line is not a match.
+        if (token.size() == 2 && token[0] == testCase) {
             return token[1];
         }
     }
@@ -450,8 +452,15 @@ void checkGtestParams(int argc, char** argv) {
     if (argc > 1) {
         std::string argument = argv[1];
         if (argument == "--gtest_list_tests") {
-            std::filesystem::remove_all(TestHelper::getTestListFile());
-            scanTestFiles(TestHelper::appendLbugRootPath(TestHelper::E2E_TEST_FILES_DIRECTORY));
+            // One stream for the whole scan: reopening the file per test silently lost a varying
+            // number of lines on Windows, and a test missing from the list falls back to a scan.
+            std::ofstream testList(TestHelper::getTestListFile(), std::ios_base::trunc);
+            scanTestFiles(TestHelper::appendLbugRootPath(TestHelper::E2E_TEST_FILES_DIRECTORY),
+                &testList);
+            testList.close();
+            if (!testList) {
+                throw TestException("Could not write " + TestHelper::getTestListFile());
+            }
         }
         if (argument.starts_with("--gtest_filter=")) {
             std::string testCaseFile = findTestFile(argument.substr(15));
