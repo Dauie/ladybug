@@ -1,5 +1,6 @@
 #include "extension/extension_manager.h"
 
+#include "common/external_access.h"
 #include "common/file_system/virtual_file_system.h"
 #include "common/string_utils.h"
 #include "extension/extension.h"
@@ -20,6 +21,9 @@ static void executeExtensionLoader(main::ClientContext* context, const std::stri
 }
 
 void ExtensionManager::loadExtension(const std::string& path, main::ClientContext* context) {
+    // Covers LOAD EXTENSION and the replay of a WAL record that loads one: such a WAL fails the
+    // open and is left untouched rather than loading native code.
+    common::throwIfExternalAccessDisabled("Loading a native extension");
     auto fullPath = path;
     bool isOfficial = ExtensionUtils::isOfficialExtension(path);
     if (isOfficial) {

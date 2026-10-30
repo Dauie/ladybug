@@ -9,6 +9,15 @@ using namespace lbug::common;
 
 lbug_state lbug_database_init(const char* database_path, lbug_system_config config,
     lbug_database* out_database) {
+    if (out_database == nullptr) {
+        return LbugError;
+    }
+    // Every error path, including exceptions the guard below catches, leaves this NULL.
+    out_database->_database = nullptr;
+    if (database_path == nullptr) {
+        return LbugError;
+    }
+    LBUG_C_API_GUARD_BEGIN
     try {
         clearLastCAPIErrorMessage();
         std::string database_path_str = database_path;
@@ -28,9 +37,11 @@ lbug_state lbug_database_init(const char* database_path, lbug_system_config conf
         return LbugError;
     }
     return LbugSuccess;
+    LBUG_C_API_GUARD_END(LbugError)
 }
 
 void lbug_database_destroy(lbug_database* database) {
+    LBUG_C_API_GUARD_BEGIN
     if (database == nullptr) {
         return;
     }
@@ -39,9 +50,11 @@ void lbug_database_destroy(lbug_database* database) {
     if (ptr != nullptr) {
         delete static_cast<Database*>(ptr);
     }
+    LBUG_C_API_GUARD_END_VOID
 }
 
 lbug_system_config lbug_default_system_config() {
+    LBUG_C_API_GUARD_BEGIN
     SystemConfig config = SystemConfig();
     auto cSystemConfig = lbug_system_config();
     cSystemConfig.buffer_pool_size = config.bufferPoolSize;
@@ -60,4 +73,5 @@ lbug_system_config lbug_default_system_config() {
     cSystemConfig.thread_qos = config.threadQos;
 #endif
     return cSystemConfig;
+    LBUG_C_API_GUARD_END(lbug_system_config{})
 }

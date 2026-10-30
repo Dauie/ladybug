@@ -11,6 +11,7 @@
 #include "storage/file_db_id_utils.h"
 #include "storage/storage_manager.h"
 #include "storage/storage_utils.h"
+#include "storage/storage_version_info.h"
 #include "storage/wal/checksum_writer.h"
 #include "storage/wal/local_wal.h"
 
@@ -393,6 +394,8 @@ void WAL::poisonNoLock(const std::string& reason) {
 
 void WAL::writeHeader(main::ClientContext& context) {
     serializer->getWriter()->onObjectBegin();
+    serializer->write(WAL_FORMAT_MAGIC);
+    serializer->write(StorageVersionInfo::getStorageVersion());
     auto* owner =
         storageManager == nullptr ? context.getDatabase()->getStorageManager() : storageManager;
     FileDBIDUtils::writeDatabaseID(*serializer, owner->getOrInitDatabaseID(context));

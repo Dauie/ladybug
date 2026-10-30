@@ -6,7 +6,7 @@
 
 #include "common/vector/value_vector.h"
 #include "function/function.h"
-#include "re2.h"
+#include "common/regex.h"
 
 namespace lbug {
 namespace function {

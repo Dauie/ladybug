@@ -5,7 +5,7 @@
 #include "common/string_utils.h"
 #include "common/types/cast_helpers.h"
 #include "common/types/timestamp_t.h"
-#include "re2.h"
+#include "common/regex.h"
 #include <format>
 
 namespace lbug {

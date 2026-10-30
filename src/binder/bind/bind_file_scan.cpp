@@ -5,6 +5,7 @@
 #include "common/exception/binder.h"
 #include "common/exception/copy.h"
 #include "common/exception/message.h"
+#include "common/external_access.h"
 #include "common/file_system/local_file_system.h"
 #include "common/file_system/virtual_file_system.h"
 #include "common/string_utils.h"
@@ -131,6 +132,8 @@ bool handleFileViaFunction(main::ClientContext* context, std::vector<std::string
 std::unique_ptr<BoundBaseScanSource> Binder::bindFileScanSource(const BaseScanSource& scanSource,
     const options_t& options, const std::vector<std::string>& columnNames,
     const std::vector<LogicalType>& columnTypes) {
+    // Every file scan (COPY FROM, LOAD FROM, extension formats) binds here.
+    throwIfExternalAccessDisabled("Reading files (COPY FROM, LOAD FROM)");
     auto fileSource = scanSource.constPtrCast<FileScanSource>();
     auto boundOptions = bindParsingOptions(options);
     auto formatOption = boundOptions.find(FileScanInfo::FILE_FORMAT_OPTION_NAME);

@@ -250,12 +250,14 @@ FunctionCollection* FunctionCollection::getFunctions() {
         STANDALONE_TABLE_FUNCTION(ProjectGraphCypherFunction),
         STANDALONE_TABLE_FUNCTION(DropProjectedGraphFunction),
 
-        // Scan functions
+#if !defined(LBUG_NO_EXTERNAL_ACCESS)
+        // Scan functions (files)
         TABLE_FUNCTION(ParquetScanFunction), TABLE_FUNCTION(NpyScanFunction),
         TABLE_FUNCTION(SerialCSVScan), TABLE_FUNCTION(ParallelCSVScan),
 
-        // Export functions
+        // Export functions (files)
         EXPORT_FUNCTION(ExportCSVFunction), EXPORT_FUNCTION(ExportParquetFunction),
+#endif
 
         // End of array
         FINAL_FUNCTION};

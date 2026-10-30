@@ -1,8 +1,15 @@
 #pragma once
 
+#include <memory>
 #include <string>
 
+// Ladybug vendors mbedtls for SHA-256. An embedder that already ships BoringSSL or OpenSSL
+// (for example Chromium) defines LBUG_USE_OPENSSL_SHA256 and provides <openssl/sha.h> to
+// common/sha256.cpp. The header stays free of <openssl/sha.h>: its global SHA256() function
+// would collide with this class wherever lbug::common is a using-directive.
+#if !defined(LBUG_USE_OPENSSL_SHA256)
 #include "mbedtls/sha256.h"
+#endif
 
 namespace lbug {
 namespace common {
@@ -20,9 +27,14 @@ public:
     static void toBase16(const char* in, char* out, size_t len);
 
 private:
+#if defined(LBUG_USE_OPENSSL_SHA256)
+    struct Context;
+    std::unique_ptr<Context> shaContext;
+#else
     typedef mbedtls_sha256_context SHA256Context;
 
     SHA256Context shaContext;
+#endif
 };
 
 } // namespace common

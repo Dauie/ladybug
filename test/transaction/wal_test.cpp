@@ -782,8 +782,8 @@ TEST_F(WalTest, CorruptedWALChecksumMismatchInHeader) {
     systemConfig->throwOnWalReplayFailure = true;
     createDBAndConn();
     setupChecksumMismatchTest([](std::ofstream& walFileToCorrupt) {
-        walFileToCorrupt.seekp(10);
-        // 10 bytes in will be the database ID's checksum
+        // Inside the database ID, after the 12-byte format magic and storage version.
+        walFileToCorrupt.seekp(22);
         walFileToCorrupt << "abc";
     });
     EXPECT_THROW(createDBAndConn();, lbug::common::StorageException);
@@ -794,8 +794,8 @@ TEST_F(WalTest, CorruptedWALChecksumMismatchInHeaderNoThrow) {
         GTEST_SKIP();
     }
     setupChecksumMismatchTest([](std::ofstream& walFileToCorrupt) {
-        walFileToCorrupt.seekp(10);
-        // 10 bytes in will be the database ID's checksum
+        // Inside the database ID, after the 12-byte format magic and storage version.
+        walFileToCorrupt.seekp(22);
         walFileToCorrupt << "abc";
     });
 
@@ -812,7 +812,8 @@ TEST_F(WalTest, CorruptedWALChecksumMismatchInBody) {
     systemConfig->throwOnWalReplayFailure = true;
     createDBAndConn();
     setupChecksumMismatchTest([](std::ofstream& walFileToCorrupt) {
-        walFileToCorrupt.seekp(30);
+        // Past the 37-byte checksummed header, in the first record.
+        walFileToCorrupt.seekp(42);
         walFileToCorrupt << "abc";
     });
     EXPECT_THROW(createDBAndConn();, lbug::common::StorageException);
@@ -823,8 +824,8 @@ TEST_F(WalTest, CorruptedWALChecksumMismatchInBodyNoThrow) {
         GTEST_SKIP();
     }
     setupChecksumMismatchTest([](std::ofstream& walFileToCorrupt) {
-        walFileToCorrupt.seekp(10);
-        // 10 bytes in will be the database ID's checksum
+        // Inside the database ID, after the 12-byte format magic and storage version.
+        walFileToCorrupt.seekp(22);
         walFileToCorrupt << "abc";
     });
     // The replay shouldn't complete but shouldn't throw either

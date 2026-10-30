@@ -4,7 +4,7 @@
 #include "common/types/string_t.h"
 #include "common/vector/value_vector.h"
 #include "function/string/functions/base_regexp_function.h"
-#include "re2.h"
+#include "common/regex.h"
 
 namespace lbug {
 namespace function {
@@ -41,7 +41,8 @@ struct RegexpExtract : BaseRegexpOperation {
             return;
         }
 
-        copyToLbugString(targetSubMatches[group].ToString(), result, resultValueVector);
+        const auto& match = targetSubMatches[group];
+        copyToLbugString(std::string(match.data(), match.size()), result, resultValueVector);
     }
 };
 

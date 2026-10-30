@@ -46,17 +46,19 @@ include_directories(
 
 add_library(lbug_generated_extension_loader OBJECT ${GENERATED_CPP_FILE})
 
-add_library(lbug_extension
-        OBJECT
+set(LBUG_EXTENSION_SOURCES
         catalog_extension.cpp
         extension.cpp
         extension_entries.cpp
-        extension_installer.cpp
         extension_manager.cpp
-        loaded_extension.cpp
-)
+        loaded_extension.cpp)
+# The installer downloads extensions over HTTPS (cpp-httplib and OpenSSL).
+if (ENABLE_EXTERNAL_ACCESS)
+    list(APPEND LBUG_EXTENSION_SOURCES extension_installer.cpp)
+endif ()
+add_library(lbug_extension OBJECT ${LBUG_EXTENSION_SOURCES})
 
-if (NOT BUILD_WASM)
+if (NOT BUILD_WASM AND ENABLE_EXTERNAL_ACCESS)
     target_compile_definitions(lbug_extension PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
     target_include_directories(lbug_extension PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif ()

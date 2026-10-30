@@ -3,7 +3,7 @@
 #include "common/exception/conversion.h"
 #include "common/random_engine.h"
 #include "common/string_utils.h"
-#include "re2.h"
+#include "common/regex.h"
 
 namespace lbug {
 namespace common {
