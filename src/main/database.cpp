@@ -150,13 +150,20 @@ Database::Database(std::string_view databasePath, SystemConfig systemConfig,
     initMembers(databasePath, constructBMFunc);
 }
 
+Database::Database(std::string_view databasePath, SystemConfig systemConfig,
+    std::unique_ptr<FileSystem> defaultFileSystem)
+    : dbConfig{std::make_unique<DBConfig>(systemConfig)} {
+    initMembers(databasePath, initBufferManager, std::move(defaultFileSystem));
+}
+
 std::unique_ptr<BufferManager> Database::initBufferManager(const Database& db) {
     return std::make_unique<BufferManager>(db.databasePath,
         StorageUtils::getTmpFilePath(db.databasePath), db.dbConfig->bufferPoolSize,
         db.dbConfig->maxDBSize, db.vfs.get(), db.dbConfig->readOnly);
 }
 
-void Database::initMembers(std::string_view dbPath, construct_bm_func_t initBmFunc) {
+void Database::initMembers(std::string_view dbPath, construct_bm_func_t initBmFunc,
+    std::unique_ptr<FileSystem> defaultFileSystem) {
     // To expand a path with home directory(~), we have to pass in a dummy clientContext which
     // handles the home directory expansion.
     const auto dbPathStr = std::string(dbPath);
@@ -164,10 +171,11 @@ void Database::initMembers(std::string_view dbPath, construct_bm_func_t initBmFu
     databasePath = StorageUtils::expandPath(&clientContext, dbPathStr);
     clientContext.addDBDirToFileSearchPath(databasePath);
 
-    if (std::filesystem::is_directory(databasePath)) {
+    // An embedder's file system may be there because this process cannot reach the disk at all.
+    if (!defaultFileSystem && std::filesystem::is_directory(databasePath)) {
         throw RuntimeException("Database path cannot be a directory: " + databasePath);
     }
-    vfs = std::make_unique<VirtualFileSystem>(databasePath);
+    vfs = std::make_unique<VirtualFileSystem>(databasePath, std::move(defaultFileSystem));
     validatePathInReadOnly();
 
     bufferManager = initBmFunc(*this);

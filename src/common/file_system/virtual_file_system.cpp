@@ -39,8 +39,10 @@ static std::string joinRemotePath(const std::string& base, std::string path) {
 
 VirtualFileSystem::VirtualFileSystem() : VirtualFileSystem{""} {}
 
-VirtualFileSystem::VirtualFileSystem(std::string homeDir) {
-    defaultFS = std::make_unique<LocalFileSystem>(homeDir);
+VirtualFileSystem::VirtualFileSystem(std::string homeDir,
+    std::unique_ptr<FileSystem> defaultFileSystem) {
+    defaultFS = defaultFileSystem ? std::move(defaultFileSystem) :
+                                    std::make_unique<LocalFileSystem>(homeDir);
     compressedFileSystem.emplace(FileCompressionType::GZIP, std::make_unique<GZipFileSystem>());
 }
 
@@ -131,11 +133,10 @@ void VirtualFileSystem::syncFile(const FileInfo& fileInfo) const {
 
 void VirtualFileSystem::syncParentDirectory(const std::string& path) const {
     auto* fileSystem = findFileSystem(path);
-    if (fileSystem == defaultFS.get()) {
-        LocalFileSystem::syncParentDirectory(path);
-    } else if (auto* directorySyncFileSystem =
-                   dynamic_cast<const DirectorySyncFileSystem*>(fileSystem)) {
+    if (auto* directorySyncFileSystem = dynamic_cast<const DirectorySyncFileSystem*>(fileSystem)) {
         directorySyncFileSystem->syncParentDirectory(path);
+    } else if (fileSystem == defaultFS.get()) {
+        LocalFileSystem::syncParentDirectory(path);
     }
 }
 

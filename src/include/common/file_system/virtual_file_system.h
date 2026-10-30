@@ -22,7 +22,9 @@ class LBUG_API VirtualFileSystem final : public FileSystem {
 
 public:
     VirtualFileSystem();
-    explicit VirtualFileSystem(std::string homeDir);
+    // A null defaultFileSystem means the local file system.
+    explicit VirtualFileSystem(std::string homeDir,
+        std::unique_ptr<FileSystem> defaultFileSystem = nullptr);
 
     ~VirtualFileSystem() override;
 

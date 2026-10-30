@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <exception>
+#include <memory>
 #include <string>
 #ifdef _WIN32
 #include <time.h>
@@ -12,6 +13,16 @@ time_t convertTmToTime(struct tm tm);
 
 int32_t convertTimeToTm(time_t time, struct tm* out_tm);
 #endif
+
+struct lbug_file_system;
+namespace lbug::common {
+class FileSystem;
+} // namespace lbug::common
+
+bool isCompleteFileSystem(const lbug_file_system& fileSystem);
+
+std::unique_ptr<lbug::common::FileSystem> createCallbackFileSystem(
+    const lbug_file_system& fileSystem);
 
 void setLastCAPIErrorMessage(const std::string& message);
 

@@ -125,6 +125,15 @@ public:
     LBUG_API explicit Database(std::string_view databasePath,
         SystemConfig systemConfig = SystemConfig());
     /**
+     * @brief Creates a database object that does its file access through the given file system,
+     *        for embedders that cannot let the engine open files itself.
+     * @param databasePath Database path, passed through to the file system.
+     * @param systemConfig System configurations (buffer pool size and max num threads).
+     * @param defaultFileSystem Replaces the local file system for every path.
+     */
+    LBUG_API Database(std::string_view databasePath, SystemConfig systemConfig,
+        std::unique_ptr<common::FileSystem> defaultFileSystem);
+    /**
      * @brief Destructs the database object.
      */
     LBUG_API ~Database();
@@ -189,7 +198,8 @@ private:
     };
 
     static std::unique_ptr<storage::BufferManager> initBufferManager(const Database& db);
-    void initMembers(std::string_view dbPath, construct_bm_func_t initBmFunc);
+    void initMembers(std::string_view dbPath, construct_bm_func_t initBmFunc,
+        std::unique_ptr<common::FileSystem> defaultFileSystem = nullptr);
 
     // factory method only to be used for tests
     Database(std::string_view databasePath, SystemConfig systemConfig,
