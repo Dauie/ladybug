@@ -174,7 +174,7 @@ uint8_t* BufferManager::pin(FileHandle& fileHandle, page_idx_t pageIdx,
     }
 }
 
-#if defined(WIN32)
+#if defined(_WIN32) && !BM_MALLOC
 class AccessViolation : public std::exception {
 public:
     AccessViolation(const uint8_t* location) : location{location} {}
@@ -241,8 +241,11 @@ inline bool try_func(const std::function<void(uint8_t*)>& func, uint8_t* frame,
 void BufferManager::optimisticRead(FileHandle& fileHandle, page_idx_t pageIdx,
     const std::function<void(uint8_t*)>& func) {
     auto pageState = fileHandle.getPageState(pageIdx);
-#if defined(_WIN32)
-    // Change the Structured Exception handling just for the scope of this function
+#if defined(_WIN32) && !BM_MALLOC
+    // Change the Structured Exception handling just for the scope of this function. Only the
+    // VM-region manager decommits frames under optimistic readers; the malloc manager waits for
+    // readers instead, so there a real access violation must crash rather than become an
+    // exception that callers could catch.
     auto translator = ScopedTranslator(handleAccessViolation);
 #endif
     while (true) {
