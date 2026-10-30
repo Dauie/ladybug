@@ -185,6 +185,52 @@ typedef struct {
 } lbug_query_result;
 
 /**
+ * @brief The kind of lock lbug_file_system::open_file should take on a file.
+ */
+typedef enum {
+    LBUG_FILE_LOCK_NONE = 0,
+    LBUG_FILE_LOCK_SHARED = 1,
+    LBUG_FILE_LOCK_EXCLUSIVE = 2,
+} lbug_file_lock;
+
+/**
+ * @brief File operations supplied by an embedder in place of direct OS access. See
+ * lbug_database_init_with_file_system().
+ *
+ * The engine calls these from its own threads, concurrently, so they must be thread-safe.
+ * They report failure through their return value and must not throw across this boundary.
+ * Every path is the database path or one derived from it, such as its WAL.
+ */
+typedef struct lbug_file_system {
+    // Passed to every callback.
+    void* user_data;
+    // Returns an opaque file handle, or NULL on failure, including a missing file when create is
+    // false. With truncate, an existing file is emptied.
+    void* (*open_file)(void* user_data, const char* path, bool write, bool create, bool truncate,
+        lbug_file_lock lock);
+    void (*close_file)(void* user_data, void* file);
+    // Returns the number of bytes read at offset, 0 at end of file, or -1 on failure.
+    int64_t (*read_file)(void* user_data, void* file, void* buffer, uint64_t size, uint64_t offset);
+    // Writes all of size at offset, extending the file if needed.
+    bool (*write_file)(void* user_data, void* file, const void* buffer, uint64_t size,
+        uint64_t offset);
+    // Must not return until the file's data reaches stable storage; commits depend on it.
+    bool (*sync_file)(void* user_data, void* file);
+    bool (*truncate_file)(void* user_data, void* file, uint64_t size);
+    // Returns the file's size, or -1 on failure.
+    int64_t (*get_file_size)(void* user_data, void* file);
+    // True if a file or directory exists at path.
+    bool (*path_exists)(void* user_data, const char* path);
+    // Succeeds if the file is gone afterwards, including when it never existed.
+    bool (*remove_file)(void* user_data, const char* path);
+    // Replaces any existing file at to.
+    bool (*rename_file)(void* user_data, const char* from, const char* to);
+    bool (*create_directory)(void* user_data, const char* path);
+    // Makes the creation, rename or removal of path durable.
+    bool (*sync_parent_directory)(void* user_data, const char* path);
+} lbug_file_system;
+
+/**
  * @brief lbug_flat_tuple stores a vector of values.
  */
 typedef struct {
@@ -356,6 +402,21 @@ LBUG_C_API lbug_state lbug_database_init(const char* database_path,
  * @brief Destroys the lbug database instance and frees the allocated memory.
  * @param database The database instance to destroy.
  */
+/**
+ * @brief Allocates memory and creates a lbug database that does all its file access through the
+ * given callbacks, for embedders that cannot let the engine open files itself, such as a
+ * sandboxed process. Caller is responsible for calling lbug_database_destroy() to release the
+ * allocated memory.
+ * @param database_path The path to the database, passed through to the callbacks.
+ * @param system_config The runtime configuration for creating or opening the database.
+ * @param file_system The callbacks. All of them are required. They are copied, but user_data must
+ * stay valid until lbug_database_destroy() returns.
+ * @param[out] out_database The output parameter for the database object.
+ * @return The state indicating the success or failure of the operation.
+ */
+LBUG_C_API lbug_state lbug_database_init_with_file_system(const char* database_path,
+    lbug_system_config system_config, const lbug_file_system* file_system,
+    lbug_database* out_database);
 LBUG_C_API void lbug_database_destroy(lbug_database* database);
 
 LBUG_C_API lbug_system_config lbug_default_system_config();
