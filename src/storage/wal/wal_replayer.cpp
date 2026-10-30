@@ -1,9 +1,13 @@
 #include "storage/wal/wal_replayer.h"
 
+#include <algorithm>
+#include <array>
+#include <cstring>
 #include <optional>
 #include <string>
 
 #include "catalog/catalog.h"
+#include "common/checksum.h"
 #include "common/constants.h"
 #include "common/exception/checkpoint.h"
 #include "common/exception/internal.h"
@@ -28,6 +32,7 @@
 #include "storage/partition_storage_registry.h"
 #include "storage/storage_manager.h"
 #include "storage/storage_utils.h"
+#include "storage/storage_version_info.h"
 #include "storage/wal/checksum_reader.h"
 #include "storage/wal/wal.h"
 #include "storage/wal/wal_record.h"
@@ -211,8 +216,82 @@ void WALReplayer::throwIfShadowOwnedByAnotherDatabase() const {
         clientContext.getDatabasePath(), shadowFilePath));
 }
 
+// Byte layout of the WAL header object: format magic, storage version, database ID and checksum
+// flag, followed by a checksum of those bytes when the flag is set. Headers written before the
+// format prefix existed held only the database ID and flag.
+static constexpr uint64_t WAL_HEADER_SIZE =
+    sizeof(uint32_t) + sizeof(storage_version_t) + sizeof(uuid) + sizeof(uint8_t);
+static constexpr uint64_t UNVERSIONED_WAL_HEADER_SIZE = sizeof(uuid) + sizeof(uint8_t);
+
+// True if `size` header bytes end with a valid checksum flag and, when the flag is set, the
+// checksum that follows them matches. Only such an intact header can be told apart from damage.
+static bool isIntactHeader(const uint8_t* bytes, uint64_t available, uint64_t size) {
+    if (available < size) {
+        return false;
+    }
+    const auto flag = bytes[size - 1];
+    if (flag == 0) {
+        return true;
+    }
+    if (flag != 1 || available < size + sizeof(uint64_t)) {
+        return false;
+    }
+    uint64_t stored = 0;
+    std::memcpy(&stored, bytes + size, sizeof(stored));
+    std::array<uint8_t, WAL_HEADER_SIZE> header{};
+    std::memcpy(header.data(), bytes, size);
+    return checksum(header.data(), size) == stored;
+}
+
+// An intact header from another WAL format must fail the open in every recovery mode and leave
+// the files untouched: its records would be misread with the current format, and non-strict
+// recovery would otherwise discard them. A damaged or torn header keeps the existing handling
+// (strict recovery fails, non-strict recovery drops the unreadable log).
+static void throwIfWALFormatMismatch(FileInfo& fileInfo) {
+    std::array<uint8_t, WAL_HEADER_SIZE + sizeof(uint64_t)> bytes{};
+    const auto available = std::min<uint64_t>(fileInfo.getFileSize(), bytes.size());
+    if (available < UNVERSIONED_WAL_HEADER_SIZE) {
+        return;
+    }
+    fileInfo.readFromFile(bytes.data(), available, 0);
+    uint32_t magic = 0;
+    std::memcpy(&magic, bytes.data(), sizeof(magic));
+    if (magic == WAL::WAL_FORMAT_MAGIC) {
+        storage_version_t storageVersion = 0;
+        std::memcpy(&storageVersion, bytes.data() + sizeof(magic), sizeof(storageVersion));
+        if (isIntactHeader(bytes.data(), available, WAL_HEADER_SIZE) &&
+            storageVersion != StorageVersionInfo::getStorageVersion()) {
+            throw RuntimeException(std::format(
+                "Cannot replay WAL file {}: it was written by storage version {}, but this "
+                "engine uses storage version {}. The database, WAL and shadow files are left "
+                "untouched; do not delete them. Open the database with the engine version that "
+                "wrote it so it can finish recovery.",
+                fileInfo.path, storageVersion, StorageVersionInfo::getStorageVersion()));
+        }
+        return;
+    }
+    if (isIntactHeader(bytes.data(), available, UNVERSIONED_WAL_HEADER_SIZE)) {
+        throw RuntimeException(std::format(
+            "Cannot replay WAL file {}: it was written by an engine version that predates the "
+            "versioned WAL format. The database, WAL and shadow files are left untouched; do "
+            "not delete them. Open the database with the engine version that wrote it so it "
+            "can finish recovery.",
+            fileInfo.path));
+    }
+}
+
 static WALHeader readWALHeader(Deserializer& deserializer) {
     WALHeader header{};
+    // throwIfWALFormatMismatch already rejected intact headers of another format; a mismatch
+    // here is a damaged or torn header and is handled like any other unreadable header.
+    uint32_t magic = 0;
+    storage_version_t storageVersion = 0;
+    deserializer.deserializeValue(magic);
+    deserializer.deserializeValue(storageVersion);
+    if (magic != WAL::WAL_FORMAT_MAGIC ||
+        storageVersion != StorageVersionInfo::getStorageVersion()) {
+        throw RuntimeException("The WAL header is torn or not in this engine's format.");
+    }
     deserializer.deserializeValue(header.databaseID);
 
     // It is possible to read a value other than 0/1 when deserializing the flag
@@ -259,6 +338,7 @@ static uint64_t getReadOffset(Deserializer& deSer, bool enableChecksums) {
 // commits, so strict recovery rethrows and non-strict recovery may retire the WAL.
 static std::optional<bool> tryReadWALChecksumFlag(FileInfo& fileInfo,
     main::ClientContext& clientContext, bool throwOnWalReplayFailure) {
+    throwIfWALFormatMismatch(fileInfo);
     try {
         auto deserializer = initDeserializer(fileInfo, clientContext, false);
         deserializer.getReader()->onObjectBegin();
@@ -929,6 +1009,7 @@ void WALReplayer::replayCommittedCheckpoint(Checkpointer& checkpointer,
 WALReplayer::WALReplayInfo WALReplayer::dryReplay(FileInfo& fileInfo, bool throwOnWalReplayFailure,
     bool enableChecksums) const {
     WALReplayInfo replayInfo;
+    throwIfWALFormatMismatch(fileInfo);
     try {
         Deserializer deserializer = initDeserializer(fileInfo, clientContext, enableChecksums);
 

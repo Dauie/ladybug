@@ -18,6 +18,11 @@ class StorageManager;
 class WAL {
 public:
     static constexpr uint64_t CHECKPOINT_BUNDLE_FORMAT_VERSION = 2;
+    // Every WAL header starts with this magic ("LBWL" in file byte order) followed by the
+    // storage version of the engine that wrote it. Records are always parsed with the current
+    // engine's format, so replay refuses a log from another storage version (or an unversioned
+    // one) instead of misreading it; the log and database files are left untouched.
+    static constexpr uint32_t WAL_FORMAT_MAGIC = 0x4C57424C;
 
     // Recovery only: adopt the frozen WAL for one checkpoint, clearing the request on exit even
     // if the checkpoint fails before rotation.

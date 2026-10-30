@@ -43,6 +43,7 @@
 #include "storage/page_manager.h"
 #include "storage/shadow_file.h"
 #include "storage/storage_manager.h"
+#include "storage/storage_version_info.h"
 #include "storage/table/csr_chunked_node_group.h"
 #include "storage/table/csr_node_group.h"
 #include "storage/table/node_table.h"
@@ -1322,14 +1323,16 @@ static void writeWALHeaderDatabaseID(main::ClientContext& context, const std::st
     uuid expectedDatabaseID, uuid databaseID, bool enableChecksums) {
     auto fileInfo = VirtualFileSystem::GetUnsafe(context)->openFile(walPath,
         FileOpenFlags(FileFlags::READ_ONLY | FileFlags::WRITE), &context);
-    std::array<uint8_t, sizeof(uuid) + sizeof(uint8_t)> header{};
+    // Header: format magic, storage version, database ID, checksum flag.
+    constexpr auto idOffset = sizeof(uint32_t) + sizeof(storage_version_t);
+    std::array<uint8_t, idOffset + sizeof(uuid) + sizeof(uint8_t)> header{};
     fileInfo->readFromFile(header.data(), header.size(), 0);
     uuid currentDatabaseID;
-    std::memcpy(&currentDatabaseID, header.data(), sizeof(uuid));
+    std::memcpy(&currentDatabaseID, header.data() + idOffset, sizeof(uuid));
     if (currentDatabaseID.value != expectedDatabaseID.value) {
         throw RuntimeException("WAL header does not hold the expected database ID.");
     }
-    std::memcpy(header.data(), &databaseID, sizeof(uuid));
+    std::memcpy(header.data() + idOffset, &databaseID, sizeof(uuid));
     fileInfo->writeFile(header.data(), header.size(), 0);
     if (enableChecksums) {
         const auto headerChecksum = checksum(header.data(), header.size());
@@ -2621,6 +2624,74 @@ TEST_P(TornGraphWALHeaderTest, FollowsReplayFailureMode) {
 }
 
 INSTANTIATE_TEST_SUITE_P(ReplayFailureMode, TornGraphWALHeaderTest, ::testing::Bool(),
+    [](const ::testing::TestParamInfo<bool>& info) { return info.param ? "Strict" : "NonStrict"; });
+
+// A log from another WAL format must fail the open in every recovery mode and leave the files
+// untouched: parsing it with the current record format would misread it, and non-strict
+// recovery would otherwise treat it as a torn tail and discard its commits.
+class WALFormatVersionTest : public FlakyCheckpointerTest,
+                             public ::testing::WithParamInterface<bool> {};
+
+TEST_P(WALFormatVersionTest, MismatchedLogFailsOpenAndKeepsData) {
+    if (inMemMode) {
+        GTEST_SKIP();
+    }
+    systemConfig->autoCheckpoint = false;
+    systemConfig->forceCheckpointOnClose = false;
+    createDBAndConn();
+    ASSERT_TRUE(conn->query("CREATE NODE TABLE Item(id INT64 PRIMARY KEY);")->isSuccess());
+    ASSERT_TRUE(conn->query("UNWIND range(1, 3) AS i CREATE (:Item {id: i});")->isSuccess());
+    conn.reset();
+    database.reset();
+
+    const auto walPath = StorageUtils::getWALFilePath(databasePath);
+    ASSERT_TRUE(std::filesystem::exists(walPath));
+    const auto original = readFile(walPath);
+    ASSERT_GT(original.size(), sizeof(uint32_t) + sizeof(storage_version_t) + sizeof(uuid) +
+                                   sizeof(uint8_t) + sizeof(uint64_t));
+    const auto writeWAL = [&](const std::vector<uint8_t>& bytes) {
+        std::ofstream{walPath, std::ios::binary | std::ios::trunc}.write(
+            reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    };
+    systemConfig->throwOnWalReplayFailure = GetParam();
+
+    // Header: magic, storage version, database ID, checksum flag, then a checksum of those bytes
+    // when the flag is set. Rewrite the checksum so each variant is an intact header.
+    constexpr auto prefixSize = sizeof(uint32_t) + sizeof(storage_version_t);
+    constexpr auto headerSize = prefixSize + sizeof(uuid) + sizeof(uint8_t);
+    const bool checksummed = original[headerSize - 1] == 1;
+    const auto resealHeader = [&](std::vector<uint8_t>& bytes, size_t size) {
+        if (checksummed) {
+            const auto headerChecksum = checksum(bytes.data(), size);
+            std::memcpy(bytes.data() + size, &headerChecksum, sizeof(headerChecksum));
+        }
+    };
+
+    // A log written by an engine with another storage version.
+    auto otherVersion = original;
+    const storage_version_t olderVersion = StorageVersionInfo::getStorageVersion() - 1;
+    std::memcpy(otherVersion.data() + sizeof(uint32_t), &olderVersion, sizeof(olderVersion));
+    resealHeader(otherVersion, headerSize);
+    writeWAL(otherVersion);
+    EXPECT_ANY_THROW(createDBAndConn());
+    EXPECT_EQ(readFile(walPath), otherVersion);
+
+    // An unversioned log, as written before the format prefix existed.
+    std::vector<uint8_t> unversioned(original.begin() + prefixSize, original.end());
+    resealHeader(unversioned, headerSize - prefixSize);
+    writeWAL(unversioned);
+    EXPECT_ANY_THROW(createDBAndConn());
+    EXPECT_EQ(readFile(walPath), unversioned);
+
+    // The data was kept: the original log still replays.
+    writeWAL(original);
+    createDBAndConn();
+    auto result = conn->query("MATCH (i:Item) RETURN COUNT(i);");
+    ASSERT_TRUE(result->isSuccess()) << result->getErrorMessage();
+    ASSERT_EQ(result->getNext()->getValue(0)->getValue<int64_t>(), 3);
+}
+
+INSTANTIATE_TEST_SUITE_P(ReplayFailureMode, WALFormatVersionTest, ::testing::Bool(),
     [](const ::testing::TestParamInfo<bool>& info) { return info.param ? "Strict" : "NonStrict"; });
 
 // Graph-table commits are logged to the main WAL. Replaying that WAL must route each record
