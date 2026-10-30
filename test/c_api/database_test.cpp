@@ -214,3 +214,46 @@ TEST_F(CApiDatabaseTest, UseConnectionAfterDatabaseDestroy) {
 
     lbug_connection_destroy(&conn);
 }
+
+TEST_F(CApiDatabaseTest, InterruptAfterDatabaseCloseDoesNotThrow) {
+    // An embedder cancels from another thread, so an interrupt can arrive after the database
+    // has closed. Connection::interrupt throws then; the C API must record the error instead of
+    // letting the exception cross the C boundary (which would terminate the embedder).
+    lbug_database database;
+    lbug_connection connection;
+    ASSERT_EQ(lbug_database_init(databasePath.c_str(), defaultSystemConfig, &database),
+        LbugSuccess);
+    ASSERT_EQ(lbug_connection_init(&database, &connection), LbugSuccess);
+    lbug_database_destroy(&database);
+    lbug_connection_interrupt(&connection);
+    char* err = lbug_get_last_error();
+    ASSERT_NE(err, nullptr);
+    lbug_destroy_string(err);
+    lbug_connection_destroy(&connection);
+}
+
+TEST_F(CApiDatabaseTest, NullHandlesReturnErrorsNotCrashes) {
+    lbug_connection_interrupt(nullptr);
+    lbug_connection emptyConnection{nullptr};
+    lbug_connection_interrupt(&emptyConnection);
+    ASSERT_EQ(lbug_database_init(databasePath.c_str(), defaultSystemConfig, nullptr), LbugError);
+    lbug_database database;
+    ASSERT_EQ(lbug_database_init(nullptr, defaultSystemConfig, &database), LbugError);
+    ASSERT_EQ(database._database, nullptr);
+    ASSERT_EQ(lbug_connection_init(&database, nullptr), LbugError);
+
+    ASSERT_EQ(lbug_database_init(databasePath.c_str(), defaultSystemConfig, &database),
+        LbugSuccess);
+    lbug_connection connection;
+    ASSERT_EQ(lbug_connection_init(&database, &connection), LbugSuccess);
+    lbug_query_result result;
+    ASSERT_EQ(lbug_connection_query(&connection, nullptr, &result), LbugError);
+    ASSERT_EQ(lbug_connection_query(&connection, "RETURN 1", nullptr), LbugError);
+    lbug_prepared_statement prepared;
+    ASSERT_EQ(lbug_connection_prepare(&connection, nullptr, &prepared), LbugError);
+    ASSERT_EQ(lbug_data_type_get_id(nullptr), LBUG_ANY);
+    ASSERT_FALSE(lbug_data_type_equals(nullptr, nullptr));
+    ASSERT_EQ(lbug_flat_tuple_to_string(nullptr), nullptr);
+    lbug_connection_destroy(&connection);
+    lbug_database_destroy(&database);
+}

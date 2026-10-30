@@ -81,5 +81,7 @@ char* convertToOwnedCString(const std::string& str) {
 }
 
 char* lbug_get_last_error() {
+    LBUG_C_API_GUARD_BEGIN
     return takeLastCAPIErrorMessage();
+    LBUG_C_API_GUARD_END(nullptr)
 }

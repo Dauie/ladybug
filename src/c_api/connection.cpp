@@ -90,10 +90,14 @@ static lbug_state setQueryResult(std::unique_ptr<QueryResult> queryResult,
 }
 
 lbug_state lbug_connection_init(lbug_database* database, lbug_connection* out_connection) {
-    if (database == nullptr || database->_database == nullptr) {
-        out_connection->_connection = nullptr;
+    if (out_connection == nullptr) {
         return LbugError;
     }
+    out_connection->_connection = nullptr;
+    if (database == nullptr || database->_database == nullptr) {
+        return LbugError;
+    }
+    LBUG_C_API_GUARD_BEGIN
     try {
         out_connection->_connection = new Connection(static_cast<Database*>(database->_database));
     } catch (Exception& e) {
@@ -101,9 +105,11 @@ lbug_state lbug_connection_init(lbug_database* database, lbug_connection* out_co
         return LbugError;
     }
     return LbugSuccess;
+    LBUG_C_API_GUARD_END(LbugError)
 }
 
 void lbug_connection_destroy(lbug_connection* connection) {
+    LBUG_C_API_GUARD_BEGIN
     if (connection == nullptr) {
         return;
     }
@@ -114,6 +120,7 @@ void lbug_connection_destroy(lbug_connection* connection) {
         forgetArrowTableIDs(connectionPtr);
         delete connectionPtr;
     }
+    LBUG_C_API_GUARD_END_VOID
 }
 
 lbug_state lbug_connection_set_max_num_thread_for_exec(lbug_connection* connection,
@@ -121,32 +128,38 @@ lbug_state lbug_connection_set_max_num_thread_for_exec(lbug_connection* connecti
     if (connection == nullptr || connection->_connection == nullptr) {
         return LbugError;
     }
+    LBUG_C_API_GUARD_BEGIN
     try {
         static_cast<Connection*>(connection->_connection)->setMaxNumThreadForExec(num_threads);
     } catch (Exception& e) {
         return LbugError;
     }
     return LbugSuccess;
+    LBUG_C_API_GUARD_END(LbugError)
 }
 
 lbug_state lbug_connection_get_max_num_thread_for_exec(lbug_connection* connection,
     uint64_t* out_result) {
-    if (connection == nullptr || connection->_connection == nullptr) {
+    if (connection == nullptr || connection->_connection == nullptr || out_result == nullptr) {
         return LbugError;
     }
+    LBUG_C_API_GUARD_BEGIN
     try {
         *out_result = static_cast<Connection*>(connection->_connection)->getMaxNumThreadForExec();
     } catch (Exception& e) {
         return LbugError;
     }
     return LbugSuccess;
+    LBUG_C_API_GUARD_END(LbugError)
 }
 
 lbug_state lbug_connection_query(lbug_connection* connection, const char* query,
     lbug_query_result* out_query_result) {
-    if (connection == nullptr || connection->_connection == nullptr) {
+    if (connection == nullptr || connection->_connection == nullptr || query == nullptr ||
+        out_query_result == nullptr) {
         return LbugError;
     }
+    LBUG_C_API_GUARD_BEGIN
     try {
         clearLastCAPIErrorMessage();
         auto query_result =
@@ -165,13 +178,16 @@ lbug_state lbug_connection_query(lbug_connection* connection, const char* query,
         setLastCAPIErrorMessage(e.what());
         return LbugError;
     }
+    LBUG_C_API_GUARD_END(LbugError)
 }
 
 lbug_state lbug_connection_prepare(lbug_connection* connection, const char* query,
     lbug_prepared_statement* out_prepared_statement) {
-    if (connection == nullptr || connection->_connection == nullptr) {
+    if (connection == nullptr || connection->_connection == nullptr || query == nullptr ||
+        out_prepared_statement == nullptr) {
         return LbugError;
     }
+    LBUG_C_API_GUARD_BEGIN
     try {
         clearLastCAPIErrorMessage();
         auto prepared_statement =
@@ -188,15 +204,17 @@ lbug_state lbug_connection_prepare(lbug_connection* connection, const char* quer
         return LbugError;
     }
     return LbugSuccess;
+    LBUG_C_API_GUARD_END(LbugError)
 }
 
 lbug_state lbug_connection_execute(lbug_connection* connection,
     lbug_prepared_statement* prepared_statement, lbug_query_result* out_query_result) {
     if (connection == nullptr || connection->_connection == nullptr ||
         prepared_statement == nullptr || prepared_statement->_prepared_statement == nullptr ||
-        prepared_statement->_bound_values == nullptr) {
+        prepared_statement->_bound_values == nullptr || out_query_result == nullptr) {
         return LbugError;
     }
+    LBUG_C_API_GUARD_BEGIN
     try {
         clearLastCAPIErrorMessage();
         auto prepared_statement_ptr =
@@ -229,6 +247,7 @@ lbug_state lbug_connection_execute(lbug_connection* connection,
         setLastCAPIErrorMessage(e.what());
         return LbugError;
     }
+    LBUG_C_API_GUARD_END(LbugError)
 }
 
 lbug_state lbug_connection_create_arrow_table(lbug_connection* connection, const char* table_name,
@@ -238,6 +257,7 @@ lbug_state lbug_connection_create_arrow_table(lbug_connection* connection, const
         schema == nullptr || arrays == nullptr || out_query_result == nullptr) {
         return LbugError;
     }
+    LBUG_C_API_GUARD_BEGIN
     try {
         clearLastCAPIErrorMessage();
         auto result = lbug::ArrowTableSupport::createViewFromArrowTable(
@@ -253,6 +273,7 @@ lbug_state lbug_connection_create_arrow_table(lbug_connection* connection, const
         setLastCAPIErrorMessage(e.what());
         return LbugError;
     }
+    LBUG_C_API_GUARD_END(LbugError)
 }
 
 lbug_state lbug_connection_create_arrow_rel_table(lbug_connection* connection,
@@ -264,6 +285,7 @@ lbug_state lbug_connection_create_arrow_rel_table(lbug_connection* connection,
         arrays == nullptr || out_query_result == nullptr) {
         return LbugError;
     }
+    LBUG_C_API_GUARD_BEGIN
     try {
         clearLastCAPIErrorMessage();
         auto result = lbug::ArrowTableSupport::createRelTableFromArrowTable(
@@ -279,6 +301,7 @@ lbug_state lbug_connection_create_arrow_rel_table(lbug_connection* connection,
         setLastCAPIErrorMessage(e.what());
         return LbugError;
     }
+    LBUG_C_API_GUARD_END(LbugError)
 }
 
 lbug_state lbug_connection_create_arrow_rel_table_csr(lbug_connection* connection,
@@ -292,6 +315,7 @@ lbug_state lbug_connection_create_arrow_rel_table_csr(lbug_connection* connectio
         out_query_result == nullptr) {
         return LbugError;
     }
+    LBUG_C_API_GUARD_BEGIN
     try {
         clearLastCAPIErrorMessage();
         auto result = lbug::ArrowTableSupport::createRelTableFromArrowCSR(
@@ -310,6 +334,7 @@ lbug_state lbug_connection_create_arrow_rel_table_csr(lbug_connection* connectio
         setLastCAPIErrorMessage(e.what());
         return LbugError;
     }
+    LBUG_C_API_GUARD_END(LbugError)
 }
 
 lbug_state lbug_connection_drop_arrow_table(lbug_connection* connection, const char* table_name,
@@ -318,6 +343,7 @@ lbug_state lbug_connection_drop_arrow_table(lbug_connection* connection, const c
         out_query_result == nullptr) {
         return LbugError;
     }
+    LBUG_C_API_GUARD_BEGIN
     try {
         clearLastCAPIErrorMessage();
         auto connectionPtr = static_cast<Connection*>(connection->_connection);
@@ -335,22 +361,30 @@ lbug_state lbug_connection_drop_arrow_table(lbug_connection* connection, const c
         setLastCAPIErrorMessage(e.what());
         return LbugError;
     }
+    LBUG_C_API_GUARD_END(LbugError)
 }
 
 void lbug_connection_interrupt(lbug_connection* connection) {
+    if (connection == nullptr || connection->_connection == nullptr) {
+        return;
+    }
+    LBUG_C_API_GUARD_BEGIN
     static_cast<Connection*>(connection->_connection)->interrupt();
+    LBUG_C_API_GUARD_END_VOID
 }
 
 lbug_state lbug_connection_set_query_timeout(lbug_connection* connection, uint64_t timeout_in_ms) {
     if (connection == nullptr || connection->_connection == nullptr) {
         return LbugError;
     }
+    LBUG_C_API_GUARD_BEGIN
     try {
         static_cast<Connection*>(connection->_connection)->setQueryTimeOut(timeout_in_ms);
     } catch (Exception& e) {
         return LbugError;
     }
     return LbugSuccess;
+    LBUG_C_API_GUARD_END(LbugError)
 }
 
 // Helper: walk the logical operator tree to find the first TABLE_FUNCTION_CALL
@@ -391,6 +425,7 @@ lbug_state lbug_connection_get_pushed_sql(lbug_connection* connection, const cha
     // Initialize the out parameter up-front so every error path leaves it as NULL
     // rather than whatever the caller passed in.
     *out_sql = nullptr;
+    LBUG_C_API_GUARD_BEGIN
     try {
         clearLastCAPIErrorMessage();
 
@@ -430,4 +465,5 @@ lbug_state lbug_connection_get_pushed_sql(lbug_connection* connection, const cha
         *out_sql = nullptr;
         return LbugError;
     }
+    LBUG_C_API_GUARD_END(LbugError)
 }
