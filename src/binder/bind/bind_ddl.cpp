@@ -18,6 +18,7 @@
 #include "common/enums/storage_format.h"
 #include "common/exception/binder.h"
 #include "common/exception/message.h"
+#include "common/external_access.h"
 #include "common/string_utils.h"
 #include "common/system_config.h"
 #include "common/types/types.h"
@@ -192,6 +193,7 @@ void Binder::validateColumnExistence(const TableCatalogEntry* entry,
 
 static std::string getStorage(const case_insensitive_map_t<Value>& options) {
     if (options.contains(TableOptionConstants::REL_STORAGE_OPTION)) {
+        throwIfExternalAccessDisabled("Tables stored outside the database");
         return options.at(TableOptionConstants::REL_STORAGE_OPTION).toString();
     }
     return "";
@@ -207,6 +209,7 @@ static ExtendDirection getStorageDirection(const case_insensitive_map_t<Value>& 
 
 static StorageFormat getStorageFormat(const case_insensitive_map_t<Value>& options) {
     if (options.contains(TableOptionConstants::STORAGE_FORMAT_OPTION)) {
+        throwIfExternalAccessDisabled("Tables stored outside the database");
         return StorageFormatUtils::fromString(
             options.at(TableOptionConstants::STORAGE_FORMAT_OPTION).toString());
     }

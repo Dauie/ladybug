@@ -2,7 +2,8 @@ add_lbug_test(current_time_test current_time_test.cpp)
 
 # Also tested for coverage in connection_test.cpp
 # but full testing requires some private APIs
-add_lbug_test(transaction_test transaction_test.cpp checkpoint_test.cpp wal_test.cpp)
+add_lbug_test(transaction_test transaction_test.cpp checkpoint_test.cpp wal_test.cpp
+    external_access_test.cpp)
 
 # Loaded through LOAD EXTENSION from a WAL replay test; resolves core symbols from the
 # test process instead of linking lbug, which would duplicate core state.

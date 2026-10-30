@@ -4,6 +4,7 @@
 #include "catalog/catalog.h"
 #include "common/copier_config/csv_reader_config.h"
 #include "common/exception/binder.h"
+#include "common/external_access.h"
 #include "common/string_utils.h"
 #include "function/built_in_function_utils.h"
 #include "function/table/table_function.h"
@@ -43,6 +44,7 @@ std::unique_ptr<BoundStatement> Binder::bind(const Statement& statement) {
         boundStatement = bindCopyFromClause(statement);
     } break;
     case StatementType::COPY_TO: {
+        throwIfExternalAccessDisabled("COPY TO");
         boundStatement = bindCopyToClause(statement);
     } break;
     case StatementType::DROP: {
@@ -73,15 +75,19 @@ std::unique_ptr<BoundStatement> Binder::bind(const Statement& statement) {
         boundStatement = bindTransaction(statement);
     } break;
     case StatementType::EXTENSION: {
+        throwIfExternalAccessDisabled("INSTALL, LOAD and UNINSTALL EXTENSION");
         boundStatement = bindExtension(statement);
     } break;
     case StatementType::EXPORT_DATABASE: {
+        throwIfExternalAccessDisabled("EXPORT DATABASE");
         boundStatement = bindExportDatabaseClause(statement);
     } break;
     case StatementType::IMPORT_DATABASE: {
+        throwIfExternalAccessDisabled("IMPORT DATABASE");
         boundStatement = bindImportDatabaseClause(statement);
     } break;
     case StatementType::ATTACH_DATABASE: {
+        throwIfExternalAccessDisabled("ATTACH");
         boundStatement = bindAttachDatabase(statement);
     } break;
     case StatementType::DETACH_DATABASE: {

@@ -286,7 +286,11 @@ std::string ClientContext::getEnvVariable(const std::string& name) {
 }
 
 std::string ClientContext::getUserHomeDir() {
-#if defined(_WIN32)
+#if defined(LBUG_NO_EXTERNAL_ACCESS)
+    // Only `~` expansion and the extension directory use the home directory, and neither
+    // applies to this build, so it does not read the environment at all.
+    return std::string();
+#elif defined(_WIN32)
     return getEnvVariable("USERPROFILE");
 #else
     return getEnvVariable("HOME");

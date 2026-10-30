@@ -159,6 +159,7 @@ option(ENABLE_UBSAN "Enable undefined behavior sanitizer." FALSE)
 option(ENABLE_RUNTIME_CHECKS "Enable runtime coherency checks (e.g. asserts)" FALSE)
 option(ENABLE_LTO "Enable Link-Time Optimization" FALSE)
 option(ENABLE_MALLOC_BUFFER_MANAGER "Enable Buffer manager using malloc. Default option for webassembly" OFF)
+option(ENABLE_EXTERNAL_ACCESS "Allow statements that read or write files outside the database, use the network or load native extensions. Turn off for sandboxed embedders." ON)
 option(LBUG_ENABLE_SIMD "Enable runtime-dispatched query-processor SIMD kernels." ON)
 
 option(LBUG_DEFAULT_REL_STORAGE_DIRECTION "Only store fwd direction in rel tables by default." BOTH)
@@ -312,6 +313,10 @@ endif()
 
 if (${ENABLE_MALLOC_BUFFER_MANAGER})
     add_compile_definitions(BM_MALLOC)
+endif()
+
+if (NOT ENABLE_EXTERNAL_ACCESS)
+    add_compile_definitions(LBUG_NO_EXTERNAL_ACCESS)
 endif()
 
 if(ANDROID_ABI)
@@ -518,7 +523,8 @@ endif()
 if (ENABLE_BACKTRACES)
     list(APPEND LBUG_LINK_LIBRARIES cpptrace::cpptrace)
 endif()
-if (NOT BUILD_WASM)
+# OpenSSL is linked only for the extension installer's HTTPS client.
+if (NOT BUILD_WASM AND ENABLE_EXTERNAL_ACCESS)
     find_package(OpenSSL 3 REQUIRED)
     # Pin to OpenSSL 3.x. `find_package(OpenSSL 3 ...)` accepts any version >= 3,
     # but the macOS Homebrew runner now also provides OpenSSL 4, whose deprecated
