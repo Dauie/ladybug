@@ -37,10 +37,6 @@ using namespace lbug::common;
 namespace lbug {
 namespace main {
 
-DatabaseManager::DatabaseManager() : defaultDatabase{""} {}
-
-DatabaseManager::~DatabaseManager() = default;
-
 // A graph materialized during an active recovery transaction cannot replay its own WAL
 // inline: graph WALs hold standalone-session transactions whose BEGIN/COMMIT would nest
 // inside the caller's recovery transaction. The loader queues one of these and
@@ -50,6 +46,10 @@ struct GraphWALReplayRequest {
     std::string graphName;
     storage::WALReplayer::GraphRecoveryState recoveryState;
 };
+
+DatabaseManager::DatabaseManager() : defaultDatabase{""} {}
+
+DatabaseManager::~DatabaseManager() = default;
 
 void DatabaseManager::registerAttachedDatabase(std::unique_ptr<AttachedDatabase> attachedDatabase) {
     if (defaultDatabase == "") {
