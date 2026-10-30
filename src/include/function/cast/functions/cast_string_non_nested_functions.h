@@ -6,7 +6,7 @@
 #include "common/types/timestamp_t.h"
 #include "common/types/types.h"
 #include "common/types/uint128_t.h"
-#include "fast_float.h"
+#include "common/float_parser.h"
 #include "function/cast/functions/numeric_limits.h"
 #include <format>
 

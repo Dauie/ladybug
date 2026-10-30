@@ -3,7 +3,7 @@
 #include "base_regexp_function.h"
 #include "common/exception/runtime.h"
 #include "common/vector/value_vector.h"
-#include "re2.h"
+#include "common/regex.h"
 
 namespace lbug {
 namespace function {

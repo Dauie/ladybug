@@ -5,11 +5,9 @@
 
 #include "common/api.h"
 
-namespace lbug {
+#include "common/regex_fwd.h"
 
-namespace regex {
-class RE2;
-}
+namespace lbug {
 
 namespace common {
 

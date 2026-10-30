@@ -2,7 +2,7 @@
 
 #include "common/types/string_t.h"
 #include "function/string/functions/base_regexp_function.h"
-#include "re2.h"
+#include "common/regex.h"
 
 namespace lbug {
 namespace function {

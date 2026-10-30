@@ -10,7 +10,7 @@
 #include "function/arithmetic/multiply.h"
 #include "function/cast/functions/cast_from_string_functions.h"
 #include "function/cast/functions/cast_functions.h"
-#include "re2.h"
+#include "common/regex.h"
 
 namespace lbug {
 namespace common {
