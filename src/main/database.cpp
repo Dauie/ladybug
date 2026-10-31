@@ -147,7 +147,7 @@ Database::Database(std::string_view databasePath, SystemConfig systemConfig)
 Database::Database(std::string_view databasePath, SystemConfig systemConfig,
     construct_bm_func_t constructBMFunc)
     : dbConfig{std::make_unique<DBConfig>(systemConfig)} {
-    initMembers(databasePath, constructBMFunc);
+    initMembers(databasePath, constructBMFunc, nullptr /*defaultFileSystem*/);
 }
 
 Database::Database(std::string_view databasePath, SystemConfig systemConfig,
