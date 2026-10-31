@@ -1229,6 +1229,41 @@ TEST_F(WalTest, ReadOnlyRecoveryNoWALFile) {
     ASSERT_EQ(res->getNumTuples(), 0);
 }
 
+// A corrupted record must fail the open. It used to reach the parser, where a corrupted element
+// count looped over zeros from past the record's end, and the open never returned.
+TEST_F(WalTest, CorruptedWALRecordsFailTheOpenWherever) {
+    if (inMemMode || systemConfig->checkpointThreshold == 0 || !systemConfig->enableChecksums) {
+        GTEST_SKIP();
+    }
+    systemConfig->autoCheckpoint = false;
+    systemConfig->throwOnWalReplayFailure = true;
+    createDBAndConn();
+    conn->query("CALL force_checkpoint_on_close=false");
+    ASSERT_TRUE(conn->query("CREATE NODE TABLE test(id INT64 PRIMARY KEY, name STRING);")
+                    ->isSuccess());
+    ASSERT_TRUE(conn->query("CREATE (:test {id: 1, name: 'a'});")->isSuccess());
+    conn.reset();
+    database.reset();
+
+    const auto walPath = lbug::storage::StorageUtils::getWALFilePath(databasePath);
+    std::string wal;
+    {
+        std::ifstream file(walPath, std::ios::binary);
+        wal.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    }
+    ASSERT_FALSE(wal.empty());
+    constexpr uint64_t stride = 13;
+    for (uint64_t offset = 0; offset < wal.size(); offset += stride) {
+        auto corrupted = wal;
+        corrupted[offset] ^= 0xff;
+        {
+            std::ofstream file(walPath, std::ios::binary | std::ios::trunc);
+            file.write(corrupted.data(), static_cast<std::streamsize>(corrupted.size()));
+        }
+        EXPECT_THROW(createDBAndConn(), Exception) << "offset " << offset;
+    }
+}
+
 // Regression test for https://github.com/LadybugDB/ladybug/issues/771.
 // A single WAL record larger than the 4KB checksum entry buffer must survive
 // WAL replay. ChecksumWriter/ChecksumReader used to discard the already

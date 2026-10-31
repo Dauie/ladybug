@@ -37,6 +37,7 @@ std::unique_ptr<WALRecord> WALRecord::deserialize(Deserializer& deserializer,
     deserializer.getReader()->onObjectBegin();
     uint64_t recordLength = 0;
     deserializer.deserializeValue(recordLength);
+    deserializer.getReader()->onObjectSize(recordLength);
     deserializer.beginReadLimit(recordLength);
     deserializer.validateDebuggingInfo(key, "type");
     deserializer.deserializeValue(type);
