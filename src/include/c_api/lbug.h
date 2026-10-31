@@ -382,6 +382,36 @@ typedef enum {
 } lbug_data_type_id;
 
 /**
+ * @brief The kind of a parsed statement. Values match common::StatementType.
+ */
+typedef enum {
+    LBUG_STATEMENT_QUERY = 0,
+    LBUG_STATEMENT_CREATE_TABLE = 1,
+    LBUG_STATEMENT_DROP = 2,
+    LBUG_STATEMENT_ALTER = 3,
+    LBUG_STATEMENT_ANALYZE = 4,
+    LBUG_STATEMENT_COPY_TO = 19,
+    LBUG_STATEMENT_COPY_FROM = 20,
+    LBUG_STATEMENT_STANDALONE_CALL = 21,
+    LBUG_STATEMENT_STANDALONE_CALL_FUNCTION = 22,
+    LBUG_STATEMENT_EXPLAIN = 23,
+    LBUG_STATEMENT_CREATE_MACRO = 24,
+    LBUG_STATEMENT_TRANSACTION = 30,
+    LBUG_STATEMENT_EXTENSION = 31,
+    LBUG_STATEMENT_EXPORT_DATABASE = 32,
+    LBUG_STATEMENT_IMPORT_DATABASE = 33,
+    LBUG_STATEMENT_ATTACH_DATABASE = 34,
+    LBUG_STATEMENT_DETACH_DATABASE = 35,
+    LBUG_STATEMENT_USE_DATABASE = 36,
+    LBUG_STATEMENT_CREATE_SEQUENCE = 37,
+    LBUG_STATEMENT_CREATE_INDEX = 38,
+    LBUG_STATEMENT_CREATE_TYPE = 39,
+    LBUG_STATEMENT_EXTENSION_CLAUSE = 40,
+    LBUG_STATEMENT_CREATE_GRAPH = 41,
+    LBUG_STATEMENT_USE_GRAPH = 42
+} lbug_statement_type;
+
+/**
  * @brief enum class for lbug function return state.
  */
 typedef enum { LbugSuccess = 0, LbugError = 1 } lbug_state;
@@ -565,6 +595,15 @@ LBUG_C_API bool lbug_prepared_statement_is_success(lbug_prepared_statement* prep
  * @return true if the prepared statement only performs read operations.
  */
 LBUG_C_API bool lbug_prepared_statement_is_read_only(lbug_prepared_statement* prepared_statement);
+/**
+ * @brief Returns what kind of statement this is, as the parser saw it, so an embedder can apply a
+ * policy without reading the statement's text. Like lbug_prepared_statement_is_read_only, this is
+ * also set on a statement that parsed but failed to prepare.
+ * @param prepared_statement The prepared statement instance.
+ * @return the statement's type, or LBUG_STATEMENT_QUERY if it did not parse.
+ */
+LBUG_C_API lbug_statement_type lbug_prepared_statement_get_statement_type(
+    lbug_prepared_statement* prepared_statement);
 /**
  * @brief Returns the error message if the prepared statement is not prepared successfully.
  * The caller is responsible for freeing the returned string with `lbug_destroy_string`.
