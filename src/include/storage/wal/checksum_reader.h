@@ -18,17 +18,26 @@ public:
     bool finished() override;
 
     void onObjectBegin() override;
-    // Reads the stored checksum
-    // Also computes + verifies the checksum for the entry that has just been read against the
-    // stored value
+    // Reads the rest of the entry and verifies it, then serves it from memory. Nothing should
+    // parse an entry's bytes before this: a corrupted entry can claim any element count, and
+    // the deserializer zero-fills reads past a record's end, so a loop over that count would
+    // never reach the end of the file.
+    void onObjectSize(uint64_t size) override;
+    // Verifies the entry that has just been read against the stored checksum, unless
+    // onObjectSize already has.
     void onObjectEnd() override;
 
     uint64_t getReadOffset() const override;
 
 private:
+    void verifyEntry();
+
     common::Deserializer deserializer;
+    uint64_t fileSize;
 
     std::optional<uint64_t> currentEntrySize;
+    // The next byte to serve from entryBuffer, once an entry has been verified up front.
+    std::optional<uint64_t> verifiedOffset;
     std::unique_ptr<MemoryBuffer> entryBuffer;
 
     std::string_view checksumMismatchMessage;

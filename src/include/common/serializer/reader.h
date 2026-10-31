@@ -25,6 +25,9 @@ public:
         }
     }
     virtual void onObjectBegin() {};
+    // Tells the reader how many bytes of the object are left, for formats that declare it, so
+    // that it can check them before anything interprets them.
+    virtual void onObjectSize(uint64_t /*size*/) {};
     virtual void onObjectEnd() {};
 
     template<typename TARGET>
