@@ -55,6 +55,18 @@ bool lbug_prepared_statement_is_read_only(lbug_prepared_statement* prepared_stat
     LBUG_C_API_GUARD_END(false)
 }
 
+lbug_statement_type lbug_prepared_statement_get_statement_type(
+    lbug_prepared_statement* prepared_statement) {
+    if (prepared_statement == nullptr || prepared_statement->_prepared_statement == nullptr) {
+        return LBUG_STATEMENT_QUERY;
+    }
+    LBUG_C_API_GUARD_BEGIN
+    return static_cast<lbug_statement_type>(
+        static_cast<PreparedStatement*>(prepared_statement->_prepared_statement)
+            ->getStatementType());
+    LBUG_C_API_GUARD_END(LBUG_STATEMENT_QUERY)
+}
+
 char* lbug_prepared_statement_get_error_message(lbug_prepared_statement* prepared_statement) {
     if (prepared_statement == nullptr || prepared_statement->_prepared_statement == nullptr) {
         return nullptr;

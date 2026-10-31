@@ -16,7 +16,7 @@ namespace main {
  */
 struct PreparedSummary { // NOLINT(*-pro-type-member-init)
     double compilingTime = 0;
-    common::StatementType statementType;
+    common::StatementType statementType{};
 };
 
 /**
