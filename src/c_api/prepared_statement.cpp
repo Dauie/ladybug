@@ -2,10 +2,37 @@
 
 #include "c_api/helpers.h"
 #include "c_api/lbug.h"
+#include "common/enums/statement_type.h"
 #include "common/types/value/value.h"
 
 using namespace lbug::common;
 using namespace lbug::main;
+
+// Embedders base policy on these, so a difference must not compile.
+static_assert(static_cast<int>(StatementType::QUERY) == LBUG_STATEMENT_QUERY);
+static_assert(static_cast<int>(StatementType::CREATE_TABLE) == LBUG_STATEMENT_CREATE_TABLE);
+static_assert(static_cast<int>(StatementType::DROP) == LBUG_STATEMENT_DROP);
+static_assert(static_cast<int>(StatementType::ALTER) == LBUG_STATEMENT_ALTER);
+static_assert(static_cast<int>(StatementType::ANALYZE) == LBUG_STATEMENT_ANALYZE);
+static_assert(static_cast<int>(StatementType::COPY_TO) == LBUG_STATEMENT_COPY_TO);
+static_assert(static_cast<int>(StatementType::COPY_FROM) == LBUG_STATEMENT_COPY_FROM);
+static_assert(static_cast<int>(StatementType::STANDALONE_CALL) == LBUG_STATEMENT_STANDALONE_CALL);
+static_assert(static_cast<int>(StatementType::STANDALONE_CALL_FUNCTION) == LBUG_STATEMENT_STANDALONE_CALL_FUNCTION);
+static_assert(static_cast<int>(StatementType::EXPLAIN) == LBUG_STATEMENT_EXPLAIN);
+static_assert(static_cast<int>(StatementType::CREATE_MACRO) == LBUG_STATEMENT_CREATE_MACRO);
+static_assert(static_cast<int>(StatementType::TRANSACTION) == LBUG_STATEMENT_TRANSACTION);
+static_assert(static_cast<int>(StatementType::EXTENSION) == LBUG_STATEMENT_EXTENSION);
+static_assert(static_cast<int>(StatementType::EXPORT_DATABASE) == LBUG_STATEMENT_EXPORT_DATABASE);
+static_assert(static_cast<int>(StatementType::IMPORT_DATABASE) == LBUG_STATEMENT_IMPORT_DATABASE);
+static_assert(static_cast<int>(StatementType::ATTACH_DATABASE) == LBUG_STATEMENT_ATTACH_DATABASE);
+static_assert(static_cast<int>(StatementType::DETACH_DATABASE) == LBUG_STATEMENT_DETACH_DATABASE);
+static_assert(static_cast<int>(StatementType::USE_DATABASE) == LBUG_STATEMENT_USE_DATABASE);
+static_assert(static_cast<int>(StatementType::CREATE_SEQUENCE) == LBUG_STATEMENT_CREATE_SEQUENCE);
+static_assert(static_cast<int>(StatementType::CREATE_INDEX) == LBUG_STATEMENT_CREATE_INDEX);
+static_assert(static_cast<int>(StatementType::CREATE_TYPE) == LBUG_STATEMENT_CREATE_TYPE);
+static_assert(static_cast<int>(StatementType::EXTENSION_CLAUSE) == LBUG_STATEMENT_EXTENSION_CLAUSE);
+static_assert(static_cast<int>(StatementType::CREATE_GRAPH) == LBUG_STATEMENT_CREATE_GRAPH);
+static_assert(static_cast<int>(StatementType::USE_GRAPH) == LBUG_STATEMENT_USE_GRAPH);
 
 void lbug_prepared_statement_bind_cpp_value(lbug_prepared_statement* prepared_statement,
     const char* param_name, std::unique_ptr<Value> value) {
