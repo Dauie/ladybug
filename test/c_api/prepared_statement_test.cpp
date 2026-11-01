@@ -47,6 +47,33 @@ TEST_F(CApiPreparedStatementTest, IsReadOnly) {
     lbug_prepared_statement_destroy(&preparedStatement);
 }
 
+TEST_F(CApiPreparedStatementTest, GetStatementType) {
+    auto connection = getConnection();
+    const auto typeOf = [&](const char* query) {
+        lbug_prepared_statement preparedStatement;
+        EXPECT_EQ(lbug_connection_prepare(connection, query, &preparedStatement), LbugSuccess);
+        const auto type = lbug_prepared_statement_get_statement_type(&preparedStatement);
+        lbug_prepared_statement_destroy(&preparedStatement);
+        return type;
+    };
+    EXPECT_EQ(typeOf("MATCH (a:person) RETURN a.ID"), LBUG_STATEMENT_QUERY);
+    EXPECT_EQ(typeOf("CREATE (:person {ID: 100})"), LBUG_STATEMENT_QUERY);
+    EXPECT_EQ(typeOf("CREATE NODE TABLE t(id INT64, PRIMARY KEY(id))"),
+        LBUG_STATEMENT_CREATE_TABLE);
+    EXPECT_EQ(typeOf("DROP TABLE person"), LBUG_STATEMENT_DROP);
+    EXPECT_EQ(typeOf("ALTER TABLE person ADD extra INT64"), LBUG_STATEMENT_ALTER);
+    EXPECT_EQ(typeOf("BEGIN TRANSACTION"), LBUG_STATEMENT_TRANSACTION);
+    EXPECT_EQ(typeOf("CHECKPOINT"), LBUG_STATEMENT_TRANSACTION);
+    EXPECT_EQ(typeOf("CALL timeout=1000"), LBUG_STATEMENT_STANDALONE_CALL);
+    EXPECT_EQ(typeOf("PROFILE MATCH (a:person) RETURN a.ID"), LBUG_STATEMENT_EXPLAIN);
+    // The type doesn't come from the text, so a leading comment can't hide it.
+    EXPECT_EQ(typeOf("/* note */ CHECKPOINT"), LBUG_STATEMENT_TRANSACTION);
+    EXPECT_EQ(typeOf("// note\nDROP TABLE person"), LBUG_STATEMENT_DROP);
+    // Set even when preparing failed.
+    EXPECT_EQ(typeOf("DROP TABLE missing"), LBUG_STATEMENT_DROP);
+    EXPECT_EQ(lbug_prepared_statement_get_statement_type(nullptr), LBUG_STATEMENT_QUERY);
+}
+
 TEST_F(CApiPreparedStatementTest, GetErrorMessage) {
     lbug_prepared_statement preparedStatement;
     lbug_state state;
