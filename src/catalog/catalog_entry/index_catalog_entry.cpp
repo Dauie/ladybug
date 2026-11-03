@@ -1,5 +1,7 @@
 #include "catalog/catalog_entry/index_catalog_entry.h"
 
+#include <cstring>
+
 #include "catalog/catalog.h"
 #include "catalog/catalog_entry/table_catalog_entry.h"
 #include "common/exception/runtime.h"
@@ -84,6 +86,19 @@ std::unique_ptr<IndexCatalogEntry> IndexCatalogEntry::deserialize(
         indexEntry->setAuxInfo(std::make_unique<BuiltinIndexAuxInfo>());
     }
     return indexEntry;
+}
+
+std::unique_ptr<IndexCatalogEntry> IndexCatalogEntry::copy() const {
+    if (isLoaded()) {
+        return std::make_unique<IndexCatalogEntry>(type, tableID, indexName, propertyIDs,
+            auxInfo->copy());
+    }
+    auto copied = std::make_unique<IndexCatalogEntry>(type, tableID, indexName, propertyIDs,
+        nullptr /* auxInfo */);
+    copied->auxBuffer = std::make_unique<uint8_t[]>(auxBufferSize);
+    std::memcpy(copied->auxBuffer.get(), auxBuffer.get(), auxBufferSize);
+    copied->auxBufferSize = auxBufferSize;
+    return copied;
 }
 
 void IndexCatalogEntry::copyFrom(const CatalogEntry& other) {
