@@ -25,6 +25,9 @@ void WALReplayer::replayNodeUpdateRecord(const WALRecord& walRecord) const {
         *nodeIDVector, *updateRecord.ownedPropertyVector);
     DASSERT(transaction::Transaction::Get(clientContext) &&
             transaction::Transaction::Get(clientContext)->isRecovery());
+    // Indexes on the column follow the replayed write, as they do when an insert is replayed.
+    // Full-text search doesn't log its own index writes, so it relies on this.
+    table.initUpdateState(&clientContext, *updateState);
     table.update(transaction::Transaction::Get(clientContext), *updateState);
 }
 
