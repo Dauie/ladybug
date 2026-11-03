@@ -112,10 +112,9 @@ public:
         return isLoaded() ? auxInfo->getTableEntryToExport(context) : nullptr;
     }
 
-    std::unique_ptr<IndexCatalogEntry> copy() const {
-        return std::make_unique<IndexCatalogEntry>(type, tableID, indexName, propertyIDs,
-            auxInfo->copy());
-    }
+    // Keeps the auxiliary data in whichever form the entry holds it. WAL replay copies every
+    // index entry, including those of extensions that haven't loaded them yet.
+    std::unique_ptr<IndexCatalogEntry> copy() const;
 
 protected:
     std::string type;
