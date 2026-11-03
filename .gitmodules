@@ -1,6 +1,6 @@
 [submodule "extension"]
 	path = extension
-	url = https://github.com/ladybugdb/extensions.git
+	url = https://github.com/Dauie/extensions.git
 [submodule "benchmark"]
 	path = benchmark
 	url = https://github.com/ladybugdb/benchmarks.git
