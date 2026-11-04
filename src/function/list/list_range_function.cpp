@@ -1,7 +1,11 @@
+#include <string>
+#include <type_traits>
+
 #include "common/exception/runtime.h"
 #include "common/type_utils.h"
 #include "function/list/vector_list_functions.h"
 #include "function/scalar_function.h"
+#include "main/client_context.h"
 
 using namespace lbug::common;
 
@@ -16,59 +20,145 @@ struct Range {
     // - default step = 1
     template<typename T>
     static void operation(T& end, list_entry_t& result, ValueVector& endVector,
-        ValueVector& resultVector) {
+        ValueVector& resultVector, main::ClientContext* context) {
         T step = 1;
         T start = 0;
-        operation(start, end, step, result, endVector, resultVector);
+        operation(start, end, step, result, endVector, resultVector, context);
     }
 
     template<typename T>
     static void operation(T& start, T& end, list_entry_t& result, ValueVector& leftVector,
-        ValueVector& /*rightVector*/, ValueVector& resultVector) {
+        ValueVector& /*rightVector*/, ValueVector& resultVector, main::ClientContext* context) {
         T step = 1;
-        operation(start, end, step, result, leftVector, resultVector);
+        operation(start, end, step, result, leftVector, resultVector, context);
     }
 
+    // Building a list runs inside one expression, where the engine's checks
+    // between chunks of rows can't stop it. So each list, and all the lists one
+    // evaluation adds, are capped, and building checks the statement's timeout
+    // and interruption as it goes.
     template<typename T>
     static void operation(T& start, T& end, T& step, list_entry_t& result,
-        ValueVector& /*inputVector*/, ValueVector& resultVector) {
+        ValueVector& /*inputVector*/, ValueVector& resultVector, main::ClientContext* context) {
         if (step == 0) {
             throw RuntimeException("Step of range cannot be 0.");
         }
+        const auto size = countElements(start, end, step);
+        if (size > ListRangeFunction::MAX_EVALUATION_ELEMENTS -
+                       ListVector::getDataVectorSize(&resultVector)) {
+            throw RuntimeException("RANGE would build more than " +
+                                   std::to_string(ListRangeFunction::MAX_EVALUATION_ELEMENTS) +
+                                   " list elements in one evaluation.");
+        }
 
         // start, start + step, start + 2step, ..., end
-        T number = start;
-        auto size = ((end - start) * 1.0 / step);
-        // Building a list runs inside one expression, where nothing checks the
-        // statement's timeout or interruption: the engine checks them between
-        // chunks of rows. So the elements one evaluation adds, for every row of
-        // its chunk, are capped, which bounds both its memory and its time. The
-        // check comes before the count is cast, which a huge range overflows.
-        const auto built = ListVector::getDataVectorSize(&resultVector);
-        if (size >= 0 && static_cast<double>(size) + 1 >
-                             static_cast<double>(ListRangeFunction::MAX_ELEMENTS - built)) {
-            throw RuntimeException("RANGE would build more than " +
-                                   std::to_string(ListRangeFunction::MAX_ELEMENTS) +
-                                   " list elements for one chunk of rows.");
-        }
-        size < 0 ? size = 0 : size = (int64_t)(size + 1);
-
-        result = ListVector::addList(&resultVector, (int64_t)size);
+        result = ListVector::addList(&resultVector, size);
         auto resultDataVector = ListVector::getDataVector(&resultVector);
-        for (auto i = 0u; i < (int64_t)size; i++) {
+        T number = start;
+        for (uint64_t i = 0; i < size; i++) {
             resultDataVector->setValue(result.offset + i, number);
-            number += step;
+            // Not past the last element, which could overflow T.
+            if (i + 1 < size) {
+                number += step;
+            }
+            if (context != nullptr && (i & (CHECK_INTERVAL - 1)) == CHECK_INTERVAL - 1) {
+                context->checkInterrupted();
+            }
         }
     }
+
+private:
+    static constexpr uint64_t CHECK_INTERVAL = 1 << 16;
+
+    // The number of elements from start to end, exactly. It is 0 when end lies on
+    // the other side of start from where step goes.
+    template<typename T>
+    static uint64_t countElements(const T& start, const T& end, const T& step) {
+        const T zero = 0;
+        const bool up = step > zero;
+        if (up ? end < start : start < end) {
+            return 0;
+        }
+        bool tooMany = false;
+        uint64_t steps = 0;
+        if constexpr (std::is_integral_v<T>) {
+            // The span always fits in 64 unsigned bits, and conversion to an
+            // unsigned type is modular, so this is exact even where end - start
+            // would overflow T.
+            const auto span = up ? static_cast<uint64_t>(end) - static_cast<uint64_t>(start) :
+                                   static_cast<uint64_t>(start) - static_cast<uint64_t>(end);
+            const auto stride =
+                up ? static_cast<uint64_t>(step) : uint64_t{0} - static_cast<uint64_t>(step);
+            steps = span / stride;
+            tooMany = steps >= ListRangeFunction::MAX_LIST_ELEMENTS;
+        } else {
+            // INT128 and UINT128 divide exactly, and throw on overflow.
+            const T span = up ? end - start : start - end;
+            const T stride = up ? step : zero - step;
+            const T exact = span / stride;
+            tooMany = exact >= T(ListRangeFunction::MAX_LIST_ELEMENTS);
+            if (!tooMany) {
+                steps = static_cast<uint64_t>(exact);
+            }
+        }
+        if (tooMany) {
+            throw RuntimeException("RANGE would build a list of more than " +
+                                   std::to_string(ListRangeFunction::MAX_LIST_ELEMENTS) +
+                                   " elements.");
+        }
+        return steps + 1;
+    }
 };
+
+// The list wrappers drop the bind data, which carries the client context.
+struct BinaryRangeWrapper {
+    template<typename LEFT_TYPE, typename RIGHT_TYPE, typename RESULT_TYPE, typename OP>
+    static void operation(LEFT_TYPE& left, RIGHT_TYPE& right, RESULT_TYPE& result,
+        ValueVector* leftValueVector, ValueVector* rightValueVector, ValueVector* resultValueVector,
+        uint64_t /*resultPos*/, void* dataPtr) {
+        OP::operation(left, right, result, *leftValueVector, *rightValueVector, *resultValueVector,
+            contextOf(dataPtr));
+    }
+
+    static main::ClientContext* contextOf(void* dataPtr) {
+        return dataPtr == nullptr ? nullptr :
+                                    static_cast<FunctionBindData*>(dataPtr)->clientContext;
+    }
+};
+
+struct TernaryRangeWrapper {
+    template<typename A_TYPE, typename B_TYPE, typename C_TYPE, typename RESULT_TYPE, typename OP>
+    static void operation(A_TYPE& a, B_TYPE& b, C_TYPE& c, RESULT_TYPE& result, void* aValueVector,
+        void* resultValueVector, void* dataPtr) {
+        OP::operation(a, b, c, result, *(ValueVector*)aValueVector, *(ValueVector*)resultValueVector,
+            BinaryRangeWrapper::contextOf(dataPtr));
+    }
+};
+
+template<typename T>
+static void binaryRange(const std::vector<std::shared_ptr<ValueVector>>& params,
+    const std::vector<SelectionVector*>& paramSelVectors, ValueVector& result,
+    SelectionVector* resultSelVector, void* dataPtr) {
+    DASSERT(params.size() == 2);
+    BinaryFunctionExecutor::executeSwitch<T, T, list_entry_t, Range, BinaryRangeWrapper>(
+        *params[0], paramSelVectors[0], *params[1], paramSelVectors[1], result, resultSelVector,
+        dataPtr);
+}
+
+template<typename T>
+static void ternaryRange(const std::vector<std::shared_ptr<ValueVector>>& params,
+    const std::vector<SelectionVector*>& paramSelVectors, ValueVector& result,
+    SelectionVector* resultSelVector, void* dataPtr) {
+    DASSERT(params.size() == 3);
+    TernaryFunctionExecutor::executeSwitch<T, T, T, list_entry_t, Range, TernaryRangeWrapper>(
+        *params[0], paramSelVectors[0], *params[1], paramSelVectors[1], *params[2],
+        paramSelVectors[2], result, resultSelVector, dataPtr);
+}
 
 static scalar_func_exec_t getBinaryExecFunc(const LogicalType& type) {
     scalar_func_exec_t execFunc;
     TypeUtils::visit(
-        type,
-        [&execFunc]<IntegerTypes T>(T) {
-            execFunc = ScalarFunction::BinaryExecListStructFunction<T, T, list_entry_t, Range>;
-        },
+        type, [&execFunc]<IntegerTypes T>(T) { execFunc = binaryRange<T>; },
         [](auto) { UNREACHABLE_CODE; });
     return execFunc;
 }
@@ -76,10 +166,7 @@ static scalar_func_exec_t getBinaryExecFunc(const LogicalType& type) {
 static scalar_func_exec_t getTernaryExecFunc(const LogicalType& type) {
     scalar_func_exec_t execFunc;
     TypeUtils::visit(
-        type,
-        [&execFunc]<IntegerTypes T>(T) {
-            execFunc = ScalarFunction::TernaryExecListStructFunction<T, T, T, list_entry_t, Range>;
-        },
+        type, [&execFunc]<IntegerTypes T>(T) { execFunc = ternaryRange<T>; },
         [](auto) { UNREACHABLE_CODE; });
     return execFunc;
 }

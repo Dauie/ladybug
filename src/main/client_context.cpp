@@ -7,6 +7,7 @@
 #include "binder/expression/parameter_expression.h"
 #include "common/exception/checkpoint.h"
 #include "common/exception/connection.h"
+#include "common/exception/interrupt.h"
 #include "common/exception/runtime.h"
 #include "common/file_system/virtual_file_system.h"
 #include "common/random_engine.h"
@@ -121,6 +122,12 @@ uint64_t ClientContext::getTimeoutRemainingInMS() const {
     DASSERT(hasTimeout());
     const auto elapsed = activeQuery.timer.getElapsedTimeInMS();
     return elapsed >= clientConfig.timeoutInMS ? 0 : clientConfig.timeoutInMS - elapsed;
+}
+
+void ClientContext::checkInterrupted() const {
+    if (interrupted() || (hasTimeout() && getTimeoutRemainingInMS() == 0)) {
+        throw InterruptException{};
+    }
 }
 
 void ClientContext::startTimer() {
@@ -585,6 +592,10 @@ ClientContext::PrepareResult ClientContext::prepareNoLock(
     auto cachedStatement = std::make_unique<CachedPreparedStatement>();
     cachedStatement->parsedStatement = parsedStatement;
     cachedStatement->useInternalCatalogEntry = useInternalCatalogEntry_;
+    // Binding can evaluate constant expressions, so the timeout covers it too.
+    // Executing starts the clock again.
+    this->resetActiveQuery();
+    this->startTimer();
     auto prepareTimer = TimeMetric(true /* enable */);
     prepareTimer.start();
     try {

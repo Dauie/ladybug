@@ -156,6 +156,7 @@ static void gatherSlice(ValueVector& dst, const SelectionVector& dstSel, const V
 }
 
 void ListLambdaEvaluator::init(const ResultSet& resultSet, ClientContext* clientContext) {
+    localState.clientContext = clientContext;
     for (auto& child : children) {
         child->init(resultSet, clientContext);
     }
@@ -202,6 +203,11 @@ void ListLambdaEvaluator::evaluateInternal() {
     bindData.sliceInfo = &sliceInfo;
     auto selVectors = SelectionVector::fromValueVectors(params);
     do {
+        // All the slices run inside one expression, which the engine's checks
+        // between chunks of rows can't stop.
+        if (localState.clientContext != nullptr) {
+            localState.clientContext->checkInterrupted();
+        }
         sliceInfo.nextSlice();
         if (sliceParamVector != nullptr) {
             copySliceToParamVector(sliceInfo, *inputVector);

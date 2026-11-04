@@ -18,9 +18,11 @@ struct ListCreationFunction {
 
 struct ListRangeFunction {
     static constexpr const char* name = "RANGE";
-    // The most list elements one evaluation of RANGE may add, across the rows of
-    // its chunk: 128 MiB of INT64 values.
-    static constexpr uint64_t MAX_ELEMENTS = 1ull << 24;
+    // The longest list RANGE builds: 128 MiB of INT64 values.
+    static constexpr uint64_t MAX_LIST_ELEMENTS = 1ull << 24;
+    // The most elements one evaluation adds across the rows it covers, at most a
+    // chunk: 512 MiB of INT64 values.
+    static constexpr uint64_t MAX_EVALUATION_ELEMENTS = 1ull << 26;
 
     static function_set getFunctionSet();
 };
