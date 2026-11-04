@@ -231,6 +231,14 @@ Runtime exception: RANGE would build more than 67108864 list elements in one eva
 -STATEMENT RETURN size(range(1, 16777216) + range(1, 16777216) + range(1, 16777216) + range(1, 16777216) + range(1, 1));
 ---- error
 Runtime exception: LIST_CONCAT would build more than 67108864 list elements in one evaluation.
+# Nested lists double with their list.
+-STATEMENT WITH [range(1, 16777216)] AS a WITH a + a AS a WITH a + a AS a WITH a + a AS a RETURN size(a);
+---- error
+Runtime exception: LIST_CONCAT would build more than 67108864 list elements in one evaluation.
+# A lambda over many chunks, whose lists add up past the cap only in total.
+-STATEMENT UNWIND range(1, 70000) AS i RETURN sum(size(list_transform([i], x -> range(1, 1000))[1]));
+---- 1
+70000000
 # A lambda keeps adding each slice's lists to its result.
 -STATEMENT RETURN size(list_transform(range(1, 409600), x -> range(1, 8000)));
 ---- error

@@ -74,6 +74,7 @@ void ActiveQuery::reset() {
     interrupted = false;
     queryID.reset();
     timer = Timer();
+    timerStarted = false;
 }
 
 ClientContext::ClientContext(Database* database) : localDatabase{database} {
@@ -125,7 +126,8 @@ uint64_t ClientContext::getTimeoutRemainingInMS() const {
 }
 
 void ClientContext::checkInterrupted() const {
-    if (interrupted() || (hasTimeout() && getTimeoutRemainingInMS() == 0)) {
+    if (interrupted() ||
+        (hasTimeout() && activeQuery.timerStarted && getTimeoutRemainingInMS() == 0)) {
         throw InterruptException{};
     }
 }
@@ -142,6 +144,7 @@ void ClientContext::startClockForBinding() {
 void ClientContext::startTimer() {
     if (hasTimeout()) {
         activeQuery.timer.start();
+        activeQuery.timerStarted = true;
     }
 }
 
@@ -365,6 +368,8 @@ void ClientContext::waitForNoActiveQuery() {
 std::unique_ptr<PreparedStatement> ClientContext::prepareWithParams(std::string_view query,
     std::unordered_map<std::string, std::unique_ptr<Value>> inputParams) {
     std::unique_lock lck{mtx};
+    // Untimed, but not stopped by the last statement's interruption either.
+    resetActiveQuery();
     InternalCatalogFlagGuard flagGuard{*this};
     auto parsedStatements = std::vector<std::shared_ptr<Statement>>();
     try {

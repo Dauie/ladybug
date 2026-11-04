@@ -63,6 +63,9 @@ struct ActiveQuery {
     std::atomic<bool> interrupted;
     std::optional<uint64_t> queryID;
     common::Timer timer;
+    // Whether the timer runs for this statement; until it does, its default
+    // start reads as long expired.
+    bool timerStarted = false;
 
     void reset();
 };

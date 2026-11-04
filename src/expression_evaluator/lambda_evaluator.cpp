@@ -195,6 +195,9 @@ void ListLambdaEvaluator::init(const ResultSet& resultSet, ClientContext* client
 
 void ListLambdaEvaluator::evaluateInternal() {
     auto* inputVector = params[0].get();
+    // Each evaluation starts from an empty result, as the function executors'
+    // results do, rather than adding to every earlier chunk's.
+    resultVector->resetAuxiliaryBuffer();
     if (resultVector->dataType.getPhysicalType() == PhysicalTypeID::LIST) {
         ListVector::resizeDataVector(resultVector.get(),
             ListVector::getDataVectorSize(inputVector));
@@ -213,10 +216,13 @@ void ListLambdaEvaluator::evaluateInternal() {
             copySliceToParamVector(sliceInfo, *inputVector);
         }
         execFunc(params, selVectors, *resultVector, resultVector->getSelVectorPtr(), &bindData);
-        // Each slice adds to the result, so its lists, nested ones included,
-        // are capped as any list building is.
-        function::checkEvaluationListElements(function::countListElements(*resultVector),
-            "A list lambda");
+        // Each slice adds the lists it builds to the result. The result's own
+        // elements are the input's, already counted where they were built.
+        if (resultVector->dataType.getPhysicalType() == PhysicalTypeID::LIST) {
+            function::checkEvaluationListElements(
+                function::countListElements(*ListVector::getDataVector(resultVector.get())),
+                "A list lambda");
+        }
     } while (!sliceInfo.done());
 }
 

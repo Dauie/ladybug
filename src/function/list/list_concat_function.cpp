@@ -31,6 +31,8 @@ void ListConcat::operation(common::list_entry_t& left, common::list_entry_t& rig
     for (auto i = 0u; i < right.size; i++) {
         resultDataVector->copyFromVectorData(resultPos++, rightDataVector, rightPos++);
     }
+    // The lists nested in the elements double too.
+    checkEvaluationListElements(countListElements(resultVector), "LIST_CONCAT");
 }
 
 std::unique_ptr<FunctionBindData> ListConcatFunction::bindFunc(const ScalarBindFuncInput& input) {
