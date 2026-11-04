@@ -8,7 +8,8 @@ namespace function {
 
 // The most list elements an expression that builds lists (RANGE, a list lambda,
 // list concatenation) may hold in one evaluation, which covers at most a chunk
-// of rows: 512 MiB of INT64 values. Such an expression runs inside one operator
+// of rows: 512 MiB of INT64 values, twice that of the 128-bit types, and briefly
+// more while the buffer grows. Such an expression runs inside one operator
 // call, so this bounds its memory where no timeout is set; the statement's
 // timeout and interruption are checked as it builds. A plan that splits rows
 // into smaller chunks can stay under it where a full chunk wouldn't.

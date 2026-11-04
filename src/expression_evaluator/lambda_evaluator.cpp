@@ -217,7 +217,8 @@ void ListLambdaEvaluator::evaluateInternal() {
         }
         execFunc(params, selVectors, *resultVector, resultVector->getSelVectorPtr(), &bindData);
         // Each slice adds the lists it builds to the result. The result's own
-        // elements are the input's, already counted where they were built.
+        // elements come from the input and aren't counted, but lists nested in
+        // the input are copied into the result's lists and count with them.
         if (resultVector->dataType.getPhysicalType() == PhysicalTypeID::LIST) {
             function::checkEvaluationListElements(
                 function::countListElements(*ListVector::getDataVector(resultVector.get())),
