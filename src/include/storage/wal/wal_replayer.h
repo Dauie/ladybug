@@ -94,8 +94,10 @@ private:
 
     // This function is used to deserialize the WAL records without actually applying them to the
     // storage.
+    // A frozen WAL was synced before it was frozen, so a crash can only have cut its checkpoint
+    // record.
     WALReplayInfo dryReplay(common::FileInfo& fileInfo, bool throwOnWalReplayFailure,
-        bool enableChecksums) const;
+        bool enableChecksums, bool frozenWAL) const;
 
     void replayFrozenWAL(Checkpointer& checkpointer, bool throwOnWalReplayFailure,
         bool enableChecksums) const;

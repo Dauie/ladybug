@@ -74,6 +74,14 @@ BufferedFileReader::BufferedFileReader(FileInfo& fileInfo)
 }
 
 void BufferedFileReader::read(uint8_t* data, uint64_t size) {
+    // A read the file can't fill must fail here. Below, a read that ends in a short last page
+    // would copy stale bytes from the previous page and leave the read offset past the end.
+    const auto readOffset = getReadOffset();
+    if (readOffset > fileSize || size > fileSize - readOffset) {
+        throw RuntimeException(
+            std::format("Reading past the end of the file {} with size {} at offset {}",
+                fileInfo.path, fileSize, readOffset));
+    }
     if (size > BUFFER_SIZE) {
         // Clear read buffer.
         fileOffset -= bufferSize;

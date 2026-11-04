@@ -132,7 +132,10 @@ typedef struct {
     // The threshold of the WAL file size in bytes. When the size of the
     // WAL file exceeds this threshold, the database will checkpoint if auto_checkpoint is true.
     uint64_t checkpoint_threshold;
-    // If true, any WAL replay failure when loading the database will raise an error.
+    // If true, any WAL replay failure when loading the database will raise an error. With
+    // checksums enabled, a final record that a crash cut off is not a failure: its commit was
+    // never acknowledged, so replay stops at the last commit before it. A frozen WAL was synced
+    // before it was frozen, so there that only covers its checkpoint record.
     bool throw_on_wal_replay_failure;
     // If true, checksums are enabled for WAL and storage pages.
     bool enable_checksums;
