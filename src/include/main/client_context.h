@@ -63,6 +63,9 @@ struct ActiveQuery {
     std::atomic<bool> interrupted;
     std::optional<uint64_t> queryID;
     common::Timer timer;
+    // Whether the timer runs for this statement; until it does, its default
+    // start reads as long expired.
+    bool timerStarted = false;
 
     void reset();
 };
@@ -101,12 +104,17 @@ public:
     static_assert(decltype(ActiveQuery::interrupted)::is_always_lock_free);
     void interrupt() { activeQuery.interrupted = true; }
     bool interrupted() const { return activeQuery.interrupted; }
+    // Throws InterruptException if the statement was interrupted or has run past
+    // its timeout. Operators check between chunks of rows; work that can run
+    // long within one expression, such as building a list, checks this itself.
+    void checkInterrupted() const;
     void setActiveQueryID(uint64_t queryID) { activeQuery.queryID = queryID; }
     std::optional<uint64_t> getActiveQueryID() const { return activeQuery.queryID; }
     bool hasTimeout() const { return clientConfig.timeoutInMS != 0; }
     void setQueryTimeOut(uint64_t timeoutInMS);
     uint64_t getQueryTimeOut() const;
     void startTimer();
+    void startClockForBinding();
     uint64_t getTimeoutRemainingInMS() const;
     void resetActiveQuery() { activeQuery.reset(); }
 

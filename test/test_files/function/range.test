@@ -164,3 +164,100 @@ Runtime exception: Step of range cannot be 0.
 -STATEMENT RETURN range(0, -1, 9223372036854775807);
 ---- 1
 []
+
+-CASE RangeIsCapped
+-STATEMENT RETURN size(range(1, 16777216));
+---- 1
+16777216
+-STATEMENT RETURN range(1, 16777217);
+---- error
+Runtime exception: RANGE would build a list of more than 16777216 elements.
+-STATEMENT UNWIND range(1, 2000000000) AS i RETURN count(i);
+---- error
+Runtime exception: RANGE would build a list of more than 16777216 elements.
+# A step that doesn't divide the span, and a negative step, at the cap.
+-STATEMENT RETURN size(range(0, 33554431, 2));
+---- 1
+16777216
+-STATEMENT RETURN size(range(16777215, 0, -1));
+---- 1
+16777216
+-STATEMENT RETURN range(16777216, 0, -1);
+---- error
+Runtime exception: RANGE would build a list of more than 16777216 elements.
+-STATEMENT RETURN range(CAST(1, 'INT128'), CAST(16777217, 'INT128'));
+---- error
+Runtime exception: RANGE would build a list of more than 16777216 elements.
+# A span wider than INT64 can hold, which end - start overflowed.
+-STATEMENT RETURN range(-9223372036854775808, 9223372036854775807);
+---- error
+Runtime exception: RANGE would build a list of more than 16777216 elements.
+-STATEMENT RETURN range(-9223372036854775808, 9223372036854775807, -1);
+---- 1
+[]
+# The last element is INT64's largest, so stepping past it would overflow.
+-STATEMENT RETURN range(9223372036854775806, 9223372036854775807);
+---- 1
+[9223372036854775806,9223372036854775807]
+# Descending ends with an ascending step are empty, unsigned or not.
+-STATEMENT RETURN range(CAST(5, 'UINT64'), CAST(1, 'UINT64'));
+---- 1
+[]
+-STATEMENT RETURN range(CAST(5, 'UINT32'), CAST(1, 'UINT32'));
+---- 1
+[]
+-STATEMENT RETURN range(CAST(5, 'UINT128'), CAST(1, 'UINT128'));
+---- 1
+[]
+-STATEMENT RETURN range(CAST(0, 'INT128'), CAST(-1, 'INT128'), CAST(2, 'INT128'));
+---- 1
+[]
+
+-CASE RangeIsCappedPerEvaluation
+# Arguments that vary by row, so one evaluation builds the lists of every row
+# rather than folding one constant.
+-STATEMENT UNWIND range(1, 5) AS i RETURN size(range(i, 16000000));
+---- error
+Runtime exception: RANGE would build more than 67108864 list elements in one evaluation.
+-STATEMENT UNWIND range(1, 4) AS i RETURN size(range(i, 16000000));
+---- 4
+15999997
+15999998
+15999999
+16000000
+
+-CASE ListBuildingIsCappedWithoutATimeout
+# Concatenation would double a list clause after clause.
+-STATEMENT RETURN size(range(1, 16777216) + range(1, 16777216) + range(1, 16777216) + range(1, 16777216) + range(1, 1));
+---- error
+Runtime exception: LIST_CONCAT would build more than 67108864 list elements in one evaluation.
+# Nested lists double with their list.
+-STATEMENT WITH [range(1, 16777216)] AS a WITH a + a AS a WITH a + a AS a WITH a + a AS a RETURN size(a);
+---- error
+Runtime exception: LIST_CONCAT would build more than 67108864 list elements in one evaluation.
+# A lambda over many chunks, whose lists add up past the cap only in total.
+-STATEMENT UNWIND range(1, 70000) AS i RETURN sum(size(list_transform([i], x -> range(1, 1000))[1]));
+---- 1
+70000000
+# A lambda keeps adding each slice's lists to its result.
+-STATEMENT RETURN size(list_transform(range(1, 409600), x -> range(1, 8000)));
+---- error
+Runtime exception: A list lambda would build more than 67108864 list elements in one evaluation.
+
+-CASE ListBuildingStopsAtTheTimeout
+-STATEMENT CALL timeout=200;
+---- ok
+# The lambda evaluates its slices inside one expression. Without checks there,
+# this would build 3.3 billion elements.
+-STATEMENT RETURN size(list_transform(range(1, 409600), x -> range(1, 8000)));
+---- error
+Interrupted.
+# Many short lists in one chunk, each shorter than RANGE's check interval:
+# about 1 GiB of INT128 values in all, just under the evaluation cap.
+-STATEMENT UNWIND range(1, 1024) AS i RETURN sum(size(range(CAST(i, 'INT128'), CAST(i + 65533, 'INT128'))));
+---- error
+Interrupted.
+# Constant folding at bind time builds each RANGE before anything executes.
+-STATEMENT RETURN size(range(1, 16777216) + range(1, 16777216) + range(1, 16777216) + range(1, 16777216) + range(1, 16777216) + range(1, 16777216) + range(1, 16777216) + range(1, 16777216) + range(1, 16777216) + range(1, 16777216));
+---- error
+Interrupted.

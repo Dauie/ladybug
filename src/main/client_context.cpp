@@ -7,6 +7,7 @@
 #include "binder/expression/parameter_expression.h"
 #include "common/exception/checkpoint.h"
 #include "common/exception/connection.h"
+#include "common/exception/interrupt.h"
 #include "common/exception/runtime.h"
 #include "common/file_system/virtual_file_system.h"
 #include "common/random_engine.h"
@@ -73,6 +74,7 @@ void ActiveQuery::reset() {
     interrupted = false;
     queryID.reset();
     timer = Timer();
+    timerStarted = false;
 }
 
 ClientContext::ClientContext(Database* database) : localDatabase{database} {
@@ -123,9 +125,26 @@ uint64_t ClientContext::getTimeoutRemainingInMS() const {
     return elapsed >= clientConfig.timeoutInMS ? 0 : clientConfig.timeoutInMS - elapsed;
 }
 
+void ClientContext::checkInterrupted() const {
+    if (interrupted() ||
+        (hasTimeout() && activeQuery.timerStarted && getTimeoutRemainingInMS() == 0)) {
+        throw InterruptException{};
+    }
+}
+
+// Binding can evaluate constant expressions, so a statement bound to run at
+// once has its timeout cover binding too; executing starts the clock again. A
+// statement prepared on its own isn't timed, since a timeout would leave it
+// failed for every later execution.
+void ClientContext::startClockForBinding() {
+    resetActiveQuery();
+    startTimer();
+}
+
 void ClientContext::startTimer() {
     if (hasTimeout()) {
         activeQuery.timer.start();
+        activeQuery.timerStarted = true;
     }
 }
 
@@ -349,6 +368,8 @@ void ClientContext::waitForNoActiveQuery() {
 std::unique_ptr<PreparedStatement> ClientContext::prepareWithParams(std::string_view query,
     std::unordered_map<std::string, std::unique_ptr<Value>> inputParams) {
     std::unique_lock lck{mtx};
+    // Untimed, but not stopped by the last statement's interruption either.
+    resetActiveQuery();
     InternalCatalogFlagGuard flagGuard{*this};
     auto parsedStatements = std::vector<std::shared_ptr<Statement>>();
     try {
@@ -427,6 +448,7 @@ std::unique_ptr<QueryResult> ClientContext::executeWithParams(PreparedStatement*
         return executeNoLock(preparedStatement, cachedStatement, queryID, {}, true);
     }
     // rebind
+    startClockForBinding();
     auto [newPreparedStatement, newCachedStatement] =
         prepareNoLock(cachedStatement->parsedStatement, false /*shouldCommitNewTransaction*/,
             preparedStatement->parameterMap);
@@ -479,6 +501,7 @@ std::unique_ptr<QueryResult> ClientContext::queryNoLock(std::string_view query,
     QueryResult* lastResult = nullptr;
     double internalCompilingTime = 0.0, internalExecutionTime = 0.0;
     for (const auto& statement : parsedStatements) {
+        startClockForBinding();
         auto [preparedStatement, cachedStatement] =
             prepareNoLock(statement, false /*shouldCommitNewTransaction*/);
         auto currentQueryResult =

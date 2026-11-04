@@ -1,6 +1,8 @@
+#include <string>
 #include <unordered_set>
 
 #include "binder/expression/expression_util.h"
+#include "common/exception/runtime.h"
 #include "function/list/vector_list_functions.h"
 #include "function/scalar_function.h"
 
@@ -8,6 +10,22 @@ using namespace lbug::common;
 
 namespace lbug {
 namespace function {
+
+uint64_t countListElements(const ValueVector& vector) {
+    if (vector.dataType.getPhysicalType() != PhysicalTypeID::LIST) {
+        return 0;
+    }
+    const auto* data = ListVector::getDataVector(&vector);
+    return ListVector::getDataVectorSize(&vector) + countListElements(*data);
+}
+
+void checkEvaluationListElements(uint64_t elements, const char* expression) {
+    if (elements > MAX_EVALUATION_LIST_ELEMENTS) {
+        throw RuntimeException(std::string(expression) + " would build more than " +
+                               std::to_string(MAX_EVALUATION_LIST_ELEMENTS) +
+                               " list elements in one evaluation.");
+    }
+}
 
 void ListCreationFunction::execFunc(
     const std::vector<std::shared_ptr<common::ValueVector>>& parameters,

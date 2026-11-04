@@ -156,6 +156,7 @@ static void gatherSlice(ValueVector& dst, const SelectionVector& dstSel, const V
 }
 
 void ListLambdaEvaluator::init(const ResultSet& resultSet, ClientContext* clientContext) {
+    localState.clientContext = clientContext;
     for (auto& child : children) {
         child->init(resultSet, clientContext);
     }
@@ -194,6 +195,9 @@ void ListLambdaEvaluator::init(const ResultSet& resultSet, ClientContext* client
 
 void ListLambdaEvaluator::evaluateInternal() {
     auto* inputVector = params[0].get();
+    // Each evaluation starts from an empty result, as the function executors'
+    // results do, rather than adding to every earlier chunk's.
+    resultVector->resetAuxiliaryBuffer();
     if (resultVector->dataType.getPhysicalType() == PhysicalTypeID::LIST) {
         ListVector::resizeDataVector(resultVector.get(),
             ListVector::getDataVectorSize(inputVector));
@@ -202,11 +206,24 @@ void ListLambdaEvaluator::evaluateInternal() {
     bindData.sliceInfo = &sliceInfo;
     auto selVectors = SelectionVector::fromValueVectors(params);
     do {
+        // All the slices run inside one expression, which the engine's checks
+        // between chunks of rows can't stop.
+        if (localState.clientContext != nullptr) {
+            localState.clientContext->checkInterrupted();
+        }
         sliceInfo.nextSlice();
         if (sliceParamVector != nullptr) {
             copySliceToParamVector(sliceInfo, *inputVector);
         }
         execFunc(params, selVectors, *resultVector, resultVector->getSelVectorPtr(), &bindData);
+        // Each slice adds the lists it builds to the result. The result's own
+        // elements come from the input and aren't counted, but lists nested in
+        // the input are copied into the result's lists and count with them.
+        if (resultVector->dataType.getPhysicalType() == PhysicalTypeID::LIST) {
+            function::checkEvaluationListElements(
+                function::countListElements(*ListVector::getDataVector(resultVector.get())),
+                "A list lambda");
+        }
     } while (!sliceInfo.done());
 }
 

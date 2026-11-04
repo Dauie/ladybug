@@ -6,6 +6,21 @@
 namespace lbug {
 namespace function {
 
+// The most list elements an expression that builds lists (RANGE, a list lambda,
+// list concatenation) may hold in one evaluation, which covers at most a chunk
+// of rows: 512 MiB of INT64 values, twice that of the 128-bit types, and briefly
+// more while the buffer grows. Such an expression runs inside one operator
+// call, so this bounds its memory where no timeout is set; the statement's
+// timeout and interruption are checked as it builds. A plan that splits rows
+// into smaller chunks can stay under it where a full chunk wouldn't.
+constexpr uint64_t MAX_EVALUATION_LIST_ELEMENTS = 1ull << 26;
+
+// The elements in a list vector's data, counting the lists nested in it.
+uint64_t countListElements(const common::ValueVector& vector);
+
+// Throws if an expression's lists hold more than MAX_EVALUATION_LIST_ELEMENTS.
+void checkEvaluationListElements(uint64_t elements, const char* expression);
+
 struct ListCreationFunction {
     static constexpr const char* name = "LIST_CREATION";
 
@@ -18,6 +33,9 @@ struct ListCreationFunction {
 
 struct ListRangeFunction {
     static constexpr const char* name = "RANGE";
+    // The longest list RANGE builds: 128 MiB of INT64 values, twice that of the
+    // 128-bit types.
+    static constexpr uint64_t MAX_LIST_ELEMENTS = 1ull << 24;
 
     static function_set getFunctionSet();
 };
