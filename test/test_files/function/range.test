@@ -226,12 +226,27 @@ Runtime exception: RANGE would build more than 67108864 list elements in one eva
 15999999
 16000000
 
+-CASE ListBuildingIsCappedWithoutATimeout
+# Concatenation would double a list clause after clause.
+-STATEMENT RETURN size(range(1, 16777216) + range(1, 16777216) + range(1, 16777216) + range(1, 16777216) + range(1, 1));
+---- error
+Runtime exception: LIST_CONCAT would build more than 67108864 list elements in one evaluation.
+# A lambda keeps adding each slice's lists to its result.
+-STATEMENT RETURN size(list_transform(range(1, 409600), x -> range(1, 8000)));
+---- error
+Runtime exception: A list lambda would build more than 67108864 list elements in one evaluation.
+
 -CASE ListBuildingStopsAtTheTimeout
 -STATEMENT CALL timeout=200;
 ---- ok
 # The lambda evaluates its slices inside one expression. Without checks there,
 # this would build 3.3 billion elements.
 -STATEMENT RETURN size(list_transform(range(1, 409600), x -> range(1, 8000)));
+---- error
+Interrupted.
+# Many short lists in one chunk, each shorter than RANGE's check interval:
+# about 1 GiB of INT128 values in all, just under the evaluation cap.
+-STATEMENT UNWIND range(1, 1024) AS i RETURN sum(size(range(CAST(i, 'INT128'), CAST(i + 65533, 'INT128'))));
 ---- error
 Interrupted.
 # Constant folding at bind time builds each RANGE before anything executes.

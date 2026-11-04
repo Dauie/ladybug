@@ -35,7 +35,7 @@ struct Range {
 
     // Building a list runs inside one expression, where the engine's checks
     // between chunks of rows can't stop it. So each list, and all the lists one
-    // evaluation adds, are capped, and building checks the statement's timeout
+    // evaluation holds, are capped, and building checks the statement's timeout
     // and interruption as it goes.
     template<typename T>
     static void operation(T& start, T& end, T& step, list_entry_t& result,
@@ -44,12 +44,7 @@ struct Range {
             throw RuntimeException("Step of range cannot be 0.");
         }
         const auto size = countElements(start, end, step);
-        if (size > ListRangeFunction::MAX_EVALUATION_ELEMENTS -
-                       ListVector::getDataVectorSize(&resultVector)) {
-            throw RuntimeException("RANGE would build more than " +
-                                   std::to_string(ListRangeFunction::MAX_EVALUATION_ELEMENTS) +
-                                   " list elements in one evaluation.");
-        }
+        checkEvaluationListElements(ListVector::getDataVectorSize(&resultVector) + size, "RANGE");
 
         // start, start + step, start + 2step, ..., end
         result = ListVector::addList(&resultVector, size);
@@ -61,7 +56,10 @@ struct Range {
             if (i + 1 < size) {
                 number += step;
             }
-            if (context != nullptr && (i & (CHECK_INTERVAL - 1)) == CHECK_INTERVAL - 1) {
+            // By position in the data vector, so short lists across a chunk's rows
+            // are checked as often as one long one.
+            if (context != nullptr &&
+                ((result.offset + i) & (CHECK_INTERVAL - 1)) == CHECK_INTERVAL - 1) {
                 context->checkInterrupted();
             }
         }

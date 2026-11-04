@@ -213,6 +213,10 @@ void ListLambdaEvaluator::evaluateInternal() {
             copySliceToParamVector(sliceInfo, *inputVector);
         }
         execFunc(params, selVectors, *resultVector, resultVector->getSelVectorPtr(), &bindData);
+        // Each slice adds to the result, so its lists, nested ones included,
+        // are capped as any list building is.
+        function::checkEvaluationListElements(function::countListElements(*resultVector),
+            "A list lambda");
     } while (!sliceInfo.done());
 }
 

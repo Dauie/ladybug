@@ -111,6 +111,7 @@ public:
     void setQueryTimeOut(uint64_t timeoutInMS);
     uint64_t getQueryTimeOut() const;
     void startTimer();
+    void startClockForBinding();
     uint64_t getTimeoutRemainingInMS() const;
     void resetActiveQuery() { activeQuery.reset(); }
 

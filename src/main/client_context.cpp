@@ -130,6 +130,15 @@ void ClientContext::checkInterrupted() const {
     }
 }
 
+// Binding can evaluate constant expressions, so a statement bound to run at
+// once has its timeout cover binding too; executing starts the clock again. A
+// statement prepared on its own isn't timed, since a timeout would leave it
+// failed for every later execution.
+void ClientContext::startClockForBinding() {
+    resetActiveQuery();
+    startTimer();
+}
+
 void ClientContext::startTimer() {
     if (hasTimeout()) {
         activeQuery.timer.start();
@@ -434,6 +443,7 @@ std::unique_ptr<QueryResult> ClientContext::executeWithParams(PreparedStatement*
         return executeNoLock(preparedStatement, cachedStatement, queryID, {}, true);
     }
     // rebind
+    startClockForBinding();
     auto [newPreparedStatement, newCachedStatement] =
         prepareNoLock(cachedStatement->parsedStatement, false /*shouldCommitNewTransaction*/,
             preparedStatement->parameterMap);
@@ -486,6 +496,7 @@ std::unique_ptr<QueryResult> ClientContext::queryNoLock(std::string_view query,
     QueryResult* lastResult = nullptr;
     double internalCompilingTime = 0.0, internalExecutionTime = 0.0;
     for (const auto& statement : parsedStatements) {
+        startClockForBinding();
         auto [preparedStatement, cachedStatement] =
             prepareNoLock(statement, false /*shouldCommitNewTransaction*/);
         auto currentQueryResult =
@@ -592,10 +603,6 @@ ClientContext::PrepareResult ClientContext::prepareNoLock(
     auto cachedStatement = std::make_unique<CachedPreparedStatement>();
     cachedStatement->parsedStatement = parsedStatement;
     cachedStatement->useInternalCatalogEntry = useInternalCatalogEntry_;
-    // Binding can evaluate constant expressions, so the timeout covers it too.
-    // Executing starts the clock again.
-    this->resetActiveQuery();
-    this->startTimer();
     auto prepareTimer = TimeMetric(true /* enable */);
     prepareTimer.start();
     try {

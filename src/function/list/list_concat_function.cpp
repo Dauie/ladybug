@@ -14,6 +14,10 @@ namespace function {
 void ListConcat::operation(common::list_entry_t& left, common::list_entry_t& right,
     common::list_entry_t& result, common::ValueVector& leftVector, common::ValueVector& rightVector,
     common::ValueVector& resultVector) {
+    // Concatenating a list with itself, clause after clause, doubles it each time.
+    checkEvaluationListElements(common::ListVector::getDataVectorSize(&resultVector) +
+                                    uint64_t{left.size} + right.size,
+        "LIST_CONCAT");
     result = common::ListVector::addList(&resultVector, left.size + right.size);
     auto resultDataVector = common::ListVector::getDataVector(&resultVector);
     auto resultPos = result.offset;
