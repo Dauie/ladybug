@@ -164,3 +164,23 @@ Runtime exception: Step of range cannot be 0.
 -STATEMENT RETURN range(0, -1, 9223372036854775807);
 ---- 1
 []
+
+-CASE RangeIsCappedPerChunk
+-STATEMENT RETURN size(range(1, 16777216));
+---- 1
+16777216
+-STATEMENT RETURN range(1, 16777217);
+---- error
+Runtime exception: RANGE would build more than 16777216 list elements for one chunk of rows.
+-STATEMENT UNWIND range(1, 2000000000) AS i RETURN count(i);
+---- error
+Runtime exception: RANGE would build more than 16777216 list elements for one chunk of rows.
+# Arguments that vary by row, so the lists are built for the whole chunk at
+# once rather than folded into one constant.
+-STATEMENT UNWIND range(1, 3) AS i RETURN size(range(i, 6000000));
+---- error
+Runtime exception: RANGE would build more than 16777216 list elements for one chunk of rows.
+-STATEMENT UNWIND range(1, 2) AS i RETURN size(range(i, 6000000));
+---- 2
+5999999
+6000000

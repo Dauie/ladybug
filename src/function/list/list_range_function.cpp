@@ -39,6 +39,18 @@ struct Range {
         // start, start + step, start + 2step, ..., end
         T number = start;
         auto size = ((end - start) * 1.0 / step);
+        // Building a list runs inside one expression, where nothing checks the
+        // statement's timeout or interruption: the engine checks them between
+        // chunks of rows. So the elements one evaluation adds, for every row of
+        // its chunk, are capped, which bounds both its memory and its time. The
+        // check comes before the count is cast, which a huge range overflows.
+        const auto built = ListVector::getDataVectorSize(&resultVector);
+        if (size >= 0 && static_cast<double>(size) + 1 >
+                             static_cast<double>(ListRangeFunction::MAX_ELEMENTS - built)) {
+            throw RuntimeException("RANGE would build more than " +
+                                   std::to_string(ListRangeFunction::MAX_ELEMENTS) +
+                                   " list elements for one chunk of rows.");
+        }
         size < 0 ? size = 0 : size = (int64_t)(size + 1);
 
         result = ListVector::addList(&resultVector, (int64_t)size);
