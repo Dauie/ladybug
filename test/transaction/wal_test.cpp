@@ -1,24 +1,34 @@
+#include <array>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <mutex>
+#include <set>
 #include <unordered_map>
+#include <vector>
 
 #include "api_test/api_test.h"
 #include "binder/ddl/bound_alter_info.h"
+#include "common/checksum.h"
 #include "common/exception/io.h"
 #include "common/exception/runtime.h"
 #include "common/exception/storage.h"
+#include "common/file_system/local_file_system.h"
 #include "common/file_system/virtual_file_system.h"
 #include "common/serializer/buffer_reader.h"
 #include "common/serializer/buffer_writer.h"
+#include "common/serializer/buffered_file.h"
 #include "common/serializer/deserializer.h"
 #include "common/serializer/serializer.h"
 #include "gmock/gmock.h"
+#include "graph_test/private_graph_test.h"
 #include "storage/buffer_manager/memory_manager.h"
 #include "storage/storage_utils.h"
 #include "storage/wal/local_wal.h"
 #include "storage/wal/record/alter_table_entry_record.h"
 #include "storage/wal/wal.h"
+#include "storage/wal/wal_record.h"
 #include <format>
 
 using namespace lbug::common;
@@ -1229,41 +1239,6 @@ TEST_F(WalTest, ReadOnlyRecoveryNoWALFile) {
     ASSERT_EQ(res->getNumTuples(), 0);
 }
 
-// A corrupted record must fail the open. It used to reach the parser, where a corrupted element
-// count looped over zeros from past the record's end, and the open never returned.
-TEST_F(WalTest, CorruptedWALRecordsFailTheOpenWherever) {
-    if (inMemMode || systemConfig->checkpointThreshold == 0 || !systemConfig->enableChecksums) {
-        GTEST_SKIP();
-    }
-    systemConfig->autoCheckpoint = false;
-    systemConfig->throwOnWalReplayFailure = true;
-    createDBAndConn();
-    conn->query("CALL force_checkpoint_on_close=false");
-    ASSERT_TRUE(conn->query("CREATE NODE TABLE test(id INT64 PRIMARY KEY, name STRING);")
-                    ->isSuccess());
-    ASSERT_TRUE(conn->query("CREATE (:test {id: 1, name: 'a'});")->isSuccess());
-    conn.reset();
-    database.reset();
-
-    const auto walPath = lbug::storage::StorageUtils::getWALFilePath(databasePath);
-    std::string wal;
-    {
-        std::ifstream file(walPath, std::ios::binary);
-        wal.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-    }
-    ASSERT_FALSE(wal.empty());
-    constexpr uint64_t stride = 13;
-    for (uint64_t offset = 0; offset < wal.size(); offset += stride) {
-        auto corrupted = wal;
-        corrupted[offset] ^= 0xff;
-        {
-            std::ofstream file(walPath, std::ios::binary | std::ios::trunc);
-            file.write(corrupted.data(), static_cast<std::streamsize>(corrupted.size()));
-        }
-        EXPECT_THROW(createDBAndConn(), Exception) << "offset " << offset;
-    }
-}
-
 // Regression test for https://github.com/LadybugDB/ladybug/issues/771.
 // A single WAL record larger than the 4KB checksum entry buffer must survive
 // WAL replay. ChecksumWriter/ChecksumReader used to discard the already
@@ -1560,4 +1535,414 @@ TEST_F(FrozenWALRecoveryTest, RelDropPropertyReplayedFromWALThenCheckpointThenAd
 
     createDBAndConn();
     EXPECT_EQ(queryCount("MATCH (a:P)-[k:K]->(b:P) WHERE k.w = 1 RETURN COUNT(k);"), 3);
+}
+
+namespace {
+
+// Strict replay of a checksummed log. The fixture needs no dataset, so these tests also run in
+// builds without COPY.
+class WALTailTest : public EmptyDBTest {
+protected:
+    void SetUp() override {
+        EmptyDBTest::SetUp();
+        if (inMemMode || systemConfig->checkpointThreshold == 0 || !systemConfig->enableChecksums) {
+            GTEST_SKIP();
+        }
+        systemConfig->autoCheckpoint = false;
+        systemConfig->forceCheckpointOnClose = false;
+        systemConfig->throwOnWalReplayFailure = true;
+        createDBAndConn();
+        walPath = lbug::storage::StorageUtils::getWALFilePath(databasePath);
+        frozenWALPath = lbug::storage::StorageUtils::getCheckpointWALFilePath(databasePath);
+    }
+
+    void closeDB() {
+        conn.reset();
+        database.reset();
+    }
+
+    // Opens the database, and returns what the open threw, or nothing.
+    std::string openError() {
+        closeDB();
+        try {
+            createDBAndConn();
+        } catch (const std::exception& e) {
+            return e.what();
+        }
+        return {};
+    }
+
+    void run(const std::string& query) const {
+        auto result = conn->query(query);
+        ASSERT_TRUE(result->isSuccess()) << query << ": " << result->getErrorMessage();
+    }
+
+    std::vector<int64_t> ids() const {
+        auto result = conn->query("MATCH (n:test) RETURN n.id ORDER BY n.id;");
+        EXPECT_TRUE(result->isSuccess()) << result->getErrorMessage();
+        std::vector<int64_t> ids;
+        while (result->isSuccess() && result->hasNext()) {
+            ids.push_back(result->getNext()->getValue(0)->getValue<int64_t>());
+        }
+        return ids;
+    }
+
+    // Commits the schema and node 1, then node 2 in a transaction longer than a 4 KiB page, and
+    // closes the database. Returns where node 1's commit ends in the log.
+    uint64_t writeTwoCommits() {
+        run("CREATE NODE TABLE test(id INT64 PRIMARY KEY, content STRING);");
+        run("CREATE (:test {id: 1, content: 'a'});");
+        const uint64_t keptEnd = std::filesystem::file_size(walPath);
+        run(std::format("CREATE (:test {{id: 2, content: '{}'}});", std::string(5000, 'x')));
+        closeDB();
+        return keptEnd;
+    }
+
+    static std::vector<uint8_t> readFile(const std::string& path) {
+        std::ifstream file(path, std::ios::binary);
+        return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    }
+
+    static void writeFile(const std::string& path, const std::vector<uint8_t>& bytes) {
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
+        file.write(reinterpret_cast<const char*>(bytes.data()),
+            static_cast<std::streamsize>(bytes.size()));
+    }
+
+    static std::vector<uint8_t> prefix(const std::vector<uint8_t>& bytes, uint64_t size) {
+        return {bytes.begin(), bytes.begin() + static_cast<std::ptrdiff_t>(size)};
+    }
+
+    // Where each record starts. A checksummed log starts with a 37-byte header: format magic 4,
+    // storage version 8, database ID 16, checksum flag 1 and its checksum 8. Each record is an
+    // 8-byte length, that many bytes, and an 8-byte checksum of both.
+    static std::vector<uint64_t> recordStarts(const std::vector<uint8_t>& wal) {
+        std::vector<uint64_t> starts;
+        uint64_t offset = 37;
+        while (offset + sizeof(uint64_t) <= wal.size()) {
+            starts.push_back(offset);
+            uint64_t length = 0;
+            std::memcpy(&length, wal.data() + offset, sizeof(length));
+            offset += 2 * sizeof(uint64_t) + length;
+        }
+        EXPECT_EQ(offset, wal.size());
+        return starts;
+    }
+
+    // A checkpoint record, as a checkpoint appends it to the log it froze.
+    static std::vector<uint8_t> checkpointRecord() {
+        auto writer = std::make_shared<BufferWriter>();
+        Serializer serializer{writer};
+        lbug::storage::WALRecord::serializeWithLength(serializer,
+            lbug::storage::CheckpointRecord{lbug::storage::WAL::CHECKPOINT_BUNDLE_FORMAT_VERSION});
+        std::vector<uint8_t> record(writer->getBlobData(),
+            writer->getBlobData() + writer->getSize());
+        const auto recordChecksum = checksum(record.data(), record.size());
+        const auto* checksumBytes = reinterpret_cast<const uint8_t*>(&recordChecksum);
+        record.insert(record.end(), checksumBytes, checksumBytes + sizeof(recordChecksum));
+        return record;
+    }
+
+    std::string walPath;
+    std::string frozenWALPath;
+};
+
+} // namespace
+
+// A crash while a commit is being appended leaves the log ending partway through one of its
+// records. That commit was never acknowledged, so strict replay drops it, opens with every earlier
+// commit, and trims the log so that later commits follow the last one directly.
+TEST_F(WALTailTest, CutOffCommitIsDroppedWhereverTheLogEnds) {
+    const auto keptEnd = writeTwoCommits();
+    const auto wal = readFile(walPath);
+    ASSERT_GT(wal.size(), keptEnd + LBUG_PAGE_SIZE);
+
+    // A read-only open drops it too, and leaves the log as it is.
+    const auto cutWAL = prefix(wal, wal.size() - 10);
+    writeFile(walPath, cutWAL);
+    systemConfig->readOnly = true;
+    ASSERT_EQ(openError(), "");
+    EXPECT_EQ(ids(), std::vector<int64_t>{1});
+    closeDB();
+    EXPECT_EQ(readFile(walPath), cutWAL);
+    systemConfig->readOnly = false;
+
+    // Through each byte of node 2's first and last records, and at intervals through the long
+    // record between them.
+    std::set<uint64_t> cuts;
+    for (uint64_t i = 1; i <= 40; i++) {
+        cuts.insert(keptEnd + i);
+        cuts.insert(wal.size() - i);
+    }
+    for (auto cut = keptEnd + 1; cut < wal.size(); cut += 97) {
+        cuts.insert(cut);
+    }
+    for (const auto cut : cuts) {
+        writeFile(walPath, prefix(wal, cut));
+        ASSERT_EQ(openError(), "") << "cut at " << cut;
+        EXPECT_EQ(ids(), std::vector<int64_t>{1}) << "cut at " << cut;
+        closeDB();
+        EXPECT_EQ(std::filesystem::file_size(walPath), keptEnd) << "cut at " << cut;
+    }
+
+    ASSERT_EQ(openError(), "");
+    run("CREATE (:test {id: 3, content: 'c'});");
+    ASSERT_EQ(openError(), "");
+    EXPECT_EQ(ids(), (std::vector<int64_t>{1, 3}));
+}
+
+// A damaged length field makes a record run past the end of the log too. A later commit shows that
+// it isn't the last record, and a begin or commit record's length never varies, so this is damage:
+// the open fails and keeps the log. That holds when node 2's commit is cut off as well, for the
+// records of the transactions committed before it.
+TEST_F(WALTailTest, RecordRunningPastTheEndFailsTheOpen) {
+    const auto keptEnd = writeTwoCommits();
+    const auto wal = readFile(walPath);
+    const auto starts = recordStarts(wal);
+    ASSERT_GE(starts.size(), 2u);
+    for (const auto start : starts) {
+        for (const bool cut : {false, true}) {
+            if (cut && start >= keptEnd) {
+                continue;
+            }
+            const auto log = cut ? prefix(wal, wal.size() - 10) : wal;
+            // One byte past the end, and far past it.
+            for (const auto length :
+                std::vector<uint64_t>{static_cast<uint64_t>(log.size() - start - 15), 1ull << 40}) {
+                auto damaged = log;
+                std::memcpy(damaged.data() + start, &length, sizeof(length));
+                writeFile(walPath, damaged);
+                EXPECT_NE(openError(), "")
+                    << "record at " << start << ", length " << length << ", cut " << cut;
+                closeDB();
+                EXPECT_EQ(readFile(walPath), damaged) << "record at " << start << ", cut " << cut;
+            }
+        }
+    }
+}
+
+// The search for a later commit reads the log in 64 KiB windows, which overlap by one byte less
+// than a commit record. A commit across the first window's end is found in the second.
+TEST_F(WALTailTest, CommitAcrossTheSearchWindowsFailsTheOpen) {
+    // Writes the schema and node 1 to a new database, and returns the size of node 1's insertion,
+    // the record that only its commit follows.
+    const auto insertionSize = [&](uint64_t contentSize) -> uint64_t {
+        closeDB();
+        std::filesystem::remove(databasePath);
+        std::filesystem::remove(walPath);
+        EXPECT_EQ(openError(), "");
+        run("CREATE NODE TABLE test(id INT64 PRIMARY KEY, content STRING);");
+        run(std::format("CREATE (:test {{id: 1, content: '{}'}});", std::string(contentSize, 'x')));
+        closeDB();
+        const auto starts = recordStarts(readFile(walPath));
+        return starts.size() < 2 ? 0 : starts.back() - starts[starts.size() - 2];
+    };
+    // The search starts a byte into the damaged insertion, so its commit starts 13 bytes before
+    // the first window ends.
+    constexpr uint64_t straddlingSize = 64 * 1024 - 12;
+    const auto contentSize = 60000 + straddlingSize - insertionSize(60000);
+    ASSERT_EQ(insertionSize(contentSize), straddlingSize);
+
+    auto damaged = readFile(walPath);
+    const auto start = recordStarts(damaged).back() - straddlingSize;
+    const uint64_t length = 1ull << 40;
+    std::memcpy(damaged.data() + start, &length, sizeof(length));
+    writeFile(walPath, damaged);
+    EXPECT_NE(openError(), "");
+}
+
+// Bytes missing from inside an earlier record shift every record after it. That record's checksum
+// fails, or, if it now runs past the end of the log, the intact commit after it shows that it
+// isn't a cut-off record.
+TEST_F(WALTailTest, BytesMissingFromAnEarlierRecordFailTheOpen) {
+    writeTwoCommits();
+    const auto wal = readFile(walPath);
+    const auto starts = recordStarts(wal);
+    ASSERT_GE(starts.size(), 2u);
+    // Node 2's insertion, the long record that only its commit follows.
+    const auto start = starts[starts.size() - 2];
+    const auto end = starts.back();
+    ASSERT_GT(end - start, LBUG_PAGE_SIZE);
+    const auto middle = static_cast<std::ptrdiff_t>(start + (end - start) / 2);
+    for (const std::ptrdiff_t missing : {16, 1000}) {
+        auto damaged = wal;
+        damaged.erase(damaged.begin() + middle, damaged.begin() + middle + missing);
+        writeFile(walPath, damaged);
+        EXPECT_NE(openError(), "") << missing << " bytes missing";
+        closeDB();
+        EXPECT_EQ(readFile(walPath), damaged) << missing << " bytes missing";
+    }
+}
+
+// A checksum failure stays fatal at the end of the log, and a cut-off commit doesn't excuse damage
+// before it.
+TEST_F(WALTailTest, ChecksumDamageFailsTheOpenEvenAtTheTail) {
+    const auto keptEnd = writeTwoCommits();
+    const auto wal = readFile(walPath);
+    const auto starts = recordStarts(wal);
+    ASSERT_FALSE(starts.empty());
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> cases;
+    cases.emplace_back("the final record's checksum", wal);
+    cases.back().second.back() ^= 0xff;
+    cases.emplace_back("the final record's contents", wal);
+    cases.back().second[starts.back() + sizeof(uint64_t)] ^= 0xff;
+    cases.emplace_back("node 1's commit, before node 2's cut-off one",
+        prefix(wal, wal.size() - 10));
+    cases.back().second[keptEnd - 1] ^= 0xff;
+    for (const auto& [name, damaged] : cases) {
+        writeFile(walPath, damaged);
+        EXPECT_NE(openError(), "") << name;
+        closeDB();
+        EXPECT_EQ(readFile(walPath), damaged) << name;
+    }
+}
+
+// A corrupted record must fail the open. It used to reach the parser, where a corrupted element
+// count looped over zeros from past the record's end, and the open never returned. That includes
+// the final commit's length field: damage that makes it run past the end isn't taken for a cut.
+TEST_F(WALTailTest, CorruptedWALRecordsFailTheOpen) {
+    run("CREATE NODE TABLE test(id INT64 PRIMARY KEY, name STRING);");
+    run("CREATE (:test {id: 1, name: 'a'});");
+    closeDB();
+    const auto wal = readFile(walPath);
+    ASSERT_FALSE(wal.empty());
+    const auto starts = recordStarts(wal);
+    std::set<uint64_t> offsets;
+    constexpr uint64_t stride = 13;
+    for (uint64_t offset = 0; offset < wal.size(); offset += stride) {
+        offsets.insert(offset);
+    }
+    // Damage to a length field's upper bytes makes its record run past the end.
+    for (const auto start : starts) {
+        offsets.insert(start + 1);
+        offsets.insert(start + 7);
+    }
+    for (const auto offset : offsets) {
+        auto corrupted = wal;
+        corrupted[offset] ^= 0xff;
+        writeFile(walPath, corrupted);
+        EXPECT_NE(openError(), "") << "offset " << offset;
+        closeDB();
+    }
+}
+
+// A frozen log is left by a crash after a checkpoint froze the log, which syncs it first. A crash
+// while the checkpoint writes its CHECKPOINT record can cut that record off: the checkpoint never
+// committed, so strict replay drops the record, keeps every commit, and finishes the checkpoint.
+TEST_F(WALTailTest, CutOffCheckpointRecordInAFrozenLogIsDropped) {
+    writeTwoCommits();
+    const auto wal = readFile(walPath);
+    ASSERT_TRUE(std::filesystem::exists(databasePath));
+    const auto dataFile = readFile(databasePath);
+    const auto checkpoint = checkpointRecord();
+    for (uint64_t cut = 1; cut < checkpoint.size(); cut++) {
+        writeFile(databasePath, dataFile);
+        std::filesystem::remove(walPath);
+        auto frozen = wal;
+        frozen.insert(frozen.end(), checkpoint.begin(),
+            checkpoint.begin() + static_cast<std::ptrdiff_t>(cut));
+        writeFile(frozenWALPath, frozen);
+        ASSERT_EQ(openError(), "") << "cut at " << cut;
+        EXPECT_EQ(ids(), (std::vector<int64_t>{1, 2})) << "cut at " << cut;
+        closeDB();
+        EXPECT_FALSE(std::filesystem::exists(frozenWALPath)) << "cut at " << cut;
+    }
+
+    ASSERT_EQ(openError(), "");
+    run("CREATE (:test {id: 3, content: 'c'});");
+    ASSERT_EQ(openError(), "");
+    EXPECT_EQ(ids(), (std::vector<int64_t>{1, 2, 3}));
+}
+
+// Every commit in a frozen log was synced before the log was frozen, so a commit cut off at its
+// end is damage, not a crash: the open fails and keeps the log.
+TEST_F(WALTailTest, CutOffCommitInAFrozenLogFailsTheOpen) {
+    const auto keptEnd = writeTwoCommits();
+    const auto wal = readFile(walPath);
+    std::filesystem::remove(walPath);
+    // Into the first record after node 1's commit, partway through node 2's insertion, and into
+    // node 2's commit.
+    const uint64_t size = wal.size();
+    for (const auto cut :
+        std::vector<uint64_t>{keptEnd + 3, keptEnd + (size - keptEnd) / 2, size - 10}) {
+        const auto frozen = prefix(wal, cut);
+        writeFile(frozenWALPath, frozen);
+        EXPECT_NE(openError(), "") << "cut at " << cut;
+        closeDB();
+        EXPECT_EQ(readFile(frozenWALPath), frozen) << "cut at " << cut;
+    }
+}
+
+// Damage in a frozen log fails the open and keeps the log: a failed checksum, an earlier record
+// that runs past the end, or a CHECKPOINT record whose length is damaged. Taking that last one
+// for a cut would delete the shadow file that may hold the only copy of committed pages.
+TEST_F(WALTailTest, DamagedFrozenLogFailsTheOpenAndIsKept) {
+    writeTwoCommits();
+    const auto wal = readFile(walPath);
+    const auto starts = recordStarts(wal);
+    ASSERT_GE(starts.size(), 2u);
+    std::filesystem::remove(walPath);
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> cases;
+    cases.emplace_back("checksum", wal);
+    cases.back().second[starts[1] + sizeof(uint64_t)] ^= 0xff;
+    cases.emplace_back("length", wal);
+    const uint64_t length = 1ull << 40;
+    std::memcpy(cases.back().second.data() + starts[1], &length, sizeof(length));
+    cases.emplace_back("checkpoint record's length", wal);
+    const auto checkpoint = checkpointRecord();
+    cases.back().second.insert(cases.back().second.end(), checkpoint.begin(), checkpoint.end());
+    std::memcpy(cases.back().second.data() + wal.size(), &length, sizeof(length));
+    for (const auto& [name, damaged] : cases) {
+        writeFile(frozenWALPath, damaged);
+        EXPECT_NE(openError(), "") << name;
+        closeDB();
+        EXPECT_EQ(readFile(frozenWALPath), damaged) << name;
+    }
+}
+
+// Without checksums nothing tells a cut from damage, so strict replay keeps refusing a cut.
+TEST_F(WALTailTest, CutOffCommitFailsTheOpenWithoutChecksums) {
+    closeDB();
+    std::filesystem::remove(databasePath);
+    std::filesystem::remove(walPath);
+    systemConfig->enableChecksums = false;
+    ASSERT_EQ(openError(), "");
+    writeTwoCommits();
+    const auto cutWAL = prefix(readFile(walPath), std::filesystem::file_size(walPath) - 10);
+    writeFile(walPath, cutWAL);
+    EXPECT_NE(openError(), "");
+    closeDB();
+    EXPECT_EQ(readFile(walPath), cutWAL);
+}
+
+// A read the file can't fill fails. It used to return stale bytes from the reader's previous page
+// when the file ended partway through the next one, leaving the read offset past the end.
+TEST_F(WALTailTest, BufferedFileReaderRefusesReadsPastTheEnd) {
+    const auto path = databasePath + ".reader";
+    std::vector<uint8_t> bytes(LBUG_PAGE_SIZE + 4);
+    for (size_t i = 0; i < bytes.size(); i++) {
+        bytes[i] = static_cast<uint8_t>(i);
+    }
+    writeFile(path, bytes);
+    LocalFileSystem fileSystem{""};
+    auto fileInfo = fileSystem.openFile(path, FileOpenFlags(FileFlags::READ_ONLY));
+    std::vector<uint8_t> data(LBUG_PAGE_SIZE - 3);
+    std::array<uint8_t, 8> tail{};
+    {
+        BufferedFileReader reader{*fileInfo};
+        reader.read(data.data(), data.size());
+        EXPECT_THROW(reader.read(tail.data(), 8), RuntimeException);
+    }
+    {
+        BufferedFileReader reader{*fileInfo};
+        reader.read(data.data(), data.size());
+        reader.read(tail.data(), 7);
+        EXPECT_TRUE(reader.finished());
+        EXPECT_EQ(tail[6], bytes.back());
+    }
+    {
+        BufferedFileReader reader{*fileInfo};
+        std::vector<uint8_t> all(bytes.size() + 1);
+        EXPECT_THROW(reader.read(all.data(), all.size()), RuntimeException);
+    }
 }

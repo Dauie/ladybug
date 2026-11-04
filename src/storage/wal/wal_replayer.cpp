@@ -5,6 +5,7 @@
 #include <cstring>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "catalog/catalog.h"
 #include "common/checksum.h"
@@ -16,7 +17,9 @@
 #include "common/file_system/file_info.h"
 #include "common/file_system/file_system.h"
 #include "common/file_system/virtual_file_system.h"
+#include "common/serializer/buffer_writer.h"
 #include "common/serializer/buffered_file.h"
+#include "common/serializer/serializer.h"
 #include "common/string_utils.h"
 #include "common/system_message.h"
 #include "common/type_utils.h"
@@ -468,7 +471,7 @@ WALReplayer::GraphRecoveryState WALReplayer::prepareGraphCheckpoint(StorageManag
             return std::nullopt;
         }
         auto replayInfo = dryReplay(*fileInfo, clientContext.getDBConfig()->throwOnWalReplayFailure,
-            *walEnableChecksums);
+            *walEnableChecksums, path == frozenWALPath);
         if (!replayInfo.isLastRecordCheckpoint && replayInfo.offsetDeserialized == 0) {
             return std::nullopt;
         }
@@ -697,7 +700,8 @@ void WALReplayer::replayFrozenWAL(Checkpointer& checkpointer, bool throwOnWalRep
     syncWALFile(*fileInfo);
 
     try {
-        const auto replayInfo = dryReplay(*fileInfo, throwOnWalReplayFailure, enableChecksums);
+        const auto replayInfo =
+            dryReplay(*fileInfo, throwOnWalReplayFailure, enableChecksums, true /* frozenWAL */);
         const auto offsetDeserialized = replayInfo.offsetDeserialized;
         if (replayInfo.isLastRecordCheckpoint) {
             throwIfReadOnlyCheckpointState(clientContext, true /* hasFrozenWAL */, shadowFilePath);
@@ -805,7 +809,8 @@ void WALReplayer::replayActiveWAL(Checkpointer& checkpointer, bool throwOnWalRep
     syncWALFile(*fileInfo);
 
     try {
-        const auto replayInfo = dryReplay(*fileInfo, throwOnWalReplayFailure, enableChecksums);
+        const auto replayInfo =
+            dryReplay(*fileInfo, throwOnWalReplayFailure, enableChecksums, false /* frozenWAL */);
         const auto offsetDeserialized = replayInfo.offsetDeserialized;
         if (replayInfo.isLastRecordCheckpoint) {
             throwIfReadOnlyCheckpointState(clientContext, true /* hasFrozenWAL */, shadowFilePath);
@@ -1006,10 +1011,139 @@ void WALReplayer::replayCommittedCheckpoint(Checkpointer& checkpointer,
     removeGraphCheckpointShadows(clientContext);
 }
 
+// A checksummed record is framed as an 8-byte length, that many bytes, and a checksum of both.
+static constexpr uint64_t CHECKSUMMED_FRAME_OVERHEAD = 2 * sizeof(uint64_t);
+
+static std::vector<uint8_t> checksummedFrame(const WALRecord& record) {
+    auto writer = std::make_shared<BufferWriter>();
+    Serializer serializer{writer};
+    WALRecord::serializeWithLength(serializer, record);
+    std::vector<uint8_t> frame(writer->getBlobData(), writer->getBlobData() + writer->getSize());
+    const auto frameChecksum = checksum(frame.data(), frame.size());
+    const auto* checksumBytes = reinterpret_cast<const uint8_t*>(&frameChecksum);
+    frame.insert(frame.end(), checksumBytes, checksumBytes + sizeof(frameChecksum));
+    return frame;
+}
+
+// The records whose bytes never vary, as a checksummed log stores them.
+struct FixedRecordFrames {
+    std::vector<uint8_t> commit;
+    // A checkpoint record of each format version this engine reads.
+    std::vector<std::vector<uint8_t>> checkpoints;
+    // The begin, commit and checkpoint records.
+    std::vector<std::vector<uint8_t>> all;
+    // Where a frame holds the record's type.
+    uint64_t typeOffset = 0;
+    uint64_t maxSize = 0;
+};
+
+static const FixedRecordFrames& fixedRecordFrames() {
+    static const FixedRecordFrames frames = [] {
+        FixedRecordFrames result;
+        const auto begin = checksummedFrame(BeginTransactionRecord{});
+        result.commit = checksummedFrame(CommitRecord{});
+        for (uint64_t version = 0; version <= WAL::CHECKPOINT_BUNDLE_FORMAT_VERSION; version++) {
+            result.checkpoints.push_back(checksummedFrame(CheckpointRecord{version}));
+        }
+        result.all = result.checkpoints;
+        result.all.push_back(begin);
+        result.all.push_back(result.commit);
+        // Begin and commit records are the same up to their type.
+        result.typeOffset = static_cast<uint64_t>(
+            std::mismatch(begin.begin(), begin.end(), result.commit.begin()).first - begin.begin());
+        for (const auto& frame : result.all) {
+            result.maxSize = std::max<uint64_t>(result.maxSize, frame.size());
+        }
+        return result;
+    }();
+    return frames;
+}
+
+static bool isProperPrefix(const std::vector<uint8_t>& bytes, const std::vector<uint8_t>& frame) {
+    return bytes.size() < frame.size() && std::equal(bytes.begin(), bytes.end(), frame.begin());
+}
+
+// True if an intact commit record starts in [begin, end).
+static bool containsCommit(FileInfo& fileInfo, uint64_t begin, uint64_t end) {
+    const auto& commit = fixedRecordFrames().commit;
+    if (end < begin || end - begin < commit.size()) {
+        return false;
+    }
+    // Windows overlap by one byte less than a commit record, so none falls between two.
+    constexpr uint64_t windowSize = 64 * 1024;
+    std::vector<uint8_t> window(windowSize);
+    for (auto windowStart = begin;; windowStart += windowSize - (commit.size() - 1)) {
+        const auto size = std::min(windowSize, end - windowStart);
+        fileInfo.readFromFile(window.data(), size, windowStart);
+        const auto windowEnd = window.begin() + static_cast<std::ptrdiff_t>(size);
+        if (std::search(window.begin(), windowEnd, commit.begin(), commit.end()) != windowEnd) {
+            return true;
+        }
+        if (windowStart + size == end) {
+            return false;
+        }
+    }
+}
+
+// A crash while a commit is being appended can leave the log ending partway through a record.
+// That commit was never acknowledged, since acknowledging it waits for the log's sync, so strict
+// replay may stop at the last commit before the cut, as non-strict replay does. Anything else that
+// fails is damage, and stays fatal. A cut-off record is one whose frame runs past the end of the
+// file, and:
+// - In a frozen log, it is a checkpoint record. Everything before that was synced before the log
+//   was frozen, so a crash can't have cut it.
+// - A begin, commit or checkpoint record is a prefix of the bytes such a record always has. Their
+//   lengths never vary, so a damaged length field shows.
+// - Any other record has no intact commit after it. A damaged length field in an earlier record
+//   also runs past the end, but a later commit shows it isn't the last. Without one, everything
+//   dropped is after the last intact commit.
+// Damage that looks like a cut is still dropped: bytes lost from the end of the file, or one fault
+// that garbles both the length and the type of the final commit. A cut record whose own contents
+// hold a commit record's exact bytes is refused, as before. Without checksums nothing tells a cut
+// from damage, so this is only used with them.
+static bool isCutOffFinalRecord(FileInfo& fileInfo, uint64_t recordStart, bool frozenWAL) {
+    const auto fileSize = fileInfo.getFileSize();
+    if (recordStart >= fileSize) {
+        return false;
+    }
+    const auto available = fileSize - recordStart;
+    const auto& frames = fixedRecordFrames();
+    std::vector<uint8_t> head(std::min(available, frames.maxSize));
+    fileInfo.readFromFile(head.data(), head.size(), recordStart);
+    if (available >= CHECKSUMMED_FRAME_OVERHEAD) {
+        uint64_t length = 0;
+        std::memcpy(&length, head.data(), sizeof(length));
+        if (length <= available - CHECKSUMMED_FRAME_OVERHEAD) {
+            // The whole frame is in the file, so whatever failed inside it is damage.
+            return false;
+        }
+    }
+    if (frozenWAL) {
+        return std::any_of(frames.checkpoints.begin(), frames.checkpoints.end(),
+            [&](const auto& frame) { return isProperPrefix(head, frame); });
+    }
+    if (available > frames.typeOffset) {
+        bool fixedType = false;
+        for (const auto& frame : frames.all) {
+            if (frame[frames.typeOffset] == head[frames.typeOffset]) {
+                fixedType = true;
+                if (isProperPrefix(head, frame)) {
+                    return true;
+                }
+            }
+        }
+        if (fixedType) {
+            return false;
+        }
+    }
+    return !containsCommit(fileInfo, recordStart + 1, fileSize);
+}
+
 WALReplayer::WALReplayInfo WALReplayer::dryReplay(FileInfo& fileInfo, bool throwOnWalReplayFailure,
-    bool enableChecksums) const {
+    bool enableChecksums, bool frozenWAL) const {
     WALReplayInfo replayInfo;
     throwIfWALFormatMismatch(fileInfo);
+    std::optional<uint64_t> recordStart;
     try {
         Deserializer deserializer = initDeserializer(fileInfo, clientContext, enableChecksums);
 
@@ -1021,6 +1155,7 @@ WALReplayer::WALReplayInfo WALReplayer::dryReplay(FileInfo& fileInfo, bool throw
 
         bool finishedDeserializing = deserializer.finished();
         while (!finishedDeserializing) {
+            recordStart = getReadOffset(deserializer, enableChecksums);
             auto walRecord = WALRecord::deserialize(deserializer, clientContext);
             finishedDeserializing = deserializer.finished();
             switch (walRecord->type) {
@@ -1058,7 +1193,10 @@ WALReplayer::WALReplayInfo WALReplayer::dryReplay(FileInfo& fileInfo, bool throw
     } catch (...) {
         // If we hit an exception while deserializing, we assume that the WAL file is (partially)
         // corrupted. This should only happen for records of the last transaction recorded.
-        if (throwOnWalReplayFailure) {
+        // Strict replay accepts that only for a final record cut off by the end of the file.
+        if (throwOnWalReplayFailure &&
+            !(enableChecksums && recordStart.has_value() &&
+                isCutOffFinalRecord(fileInfo, *recordStart, frozenWAL))) {
             throw;
         }
     }

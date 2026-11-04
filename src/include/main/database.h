@@ -64,9 +64,12 @@ struct LBUG_API SystemConfig {
      * @param forceCheckpointOnClose If true, the database will force checkpoint when closing.
      * @param throwOnWalReplayFailure If true, any WAL replaying failure when loading the database
      * will throw an error. Otherwise, Lbug will silently ignore the failure and replay up to where
-     * the error occured.
+     * the error occured. With checksums enabled, a final record that a crash cut off is not a
+     * failure in either mode: its commit was never acknowledged, so replay stops at the last
+     * commit before it. A frozen WAL was synced before it was frozen, so there that only covers
+     * its checkpoint record.
      * Default is false: on a torn tail (e.g. after a crash), the database opens with all data
-     * up to the last checkpoint, discarding only the unreplayable tail.
+     * up to the last commit before it, discarding only the unreplayable tail.
      * @param enableChecksums If true, the database will use checksums to detect corruption in the
      * WAL file.
      * @param enableMultiWrites If true, multiple concurrent write transactions are allowed.
