@@ -589,6 +589,14 @@ void Checkpointer::logCheckpointAndApplyShadowPages(bool walRotated_) {
             dataFH->getFileInfo()->syncFile();
         }
     }
+    // Partition children checkpoint their tables into their own data files the same way.
+    if (auto* dbManager = main::DatabaseManager::Get(clientContext)) {
+        for (auto* sm : dbManager->getPartitionStorageRegistry()->getAllManagers()) {
+            if (auto* dataFH = sm->getDataFH()) {
+                dataFH->getFileInfo()->syncFile();
+            }
+        }
+    }
     auto& shadowFile = mainStorageManager->getShadowFile();
     shadowFile.flushAll(mainStorageManager->getOrInitDatabaseID(clientContext));
     auto* vfs = common::VirtualFileSystem::GetUnsafe(clientContext);
