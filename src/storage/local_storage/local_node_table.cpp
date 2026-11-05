@@ -2,6 +2,7 @@
 
 #include "catalog/catalog_entry/node_table_catalog_entry.h"
 #include "common/cast.h"
+#include "common/exception/constraint.h"
 #include "common/exception/message.h"
 #include "common/exception/runtime.h"
 #include "common/types/types.h"
@@ -77,7 +78,7 @@ bool LocalNodeTable::insert(Transaction* transaction, TableInsertState& insertSt
             [&](offset_t offset) { return isVisible(transaction, offset); })) {
         const auto val =
             nodeInsertState.pkVector.getAsValue(nodeInsertState.pkVector.state->getSelVector()[0]);
-        throw RuntimeException(ExceptionMessage::duplicatePKException(val->toString()));
+        throw ConstraintException(ExceptionMessage::duplicatePKException(val->toString()));
     }
     const auto nodeIDPos =
         nodeInsertState.nodeIDVector.state->getSelVector().getSelectedPositions()[0];

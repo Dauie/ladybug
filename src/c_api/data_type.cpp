@@ -107,6 +107,7 @@ lbug_state lbug_data_type_get_child_type(lbug_logical_type* data_type,
             return LbugError;
         }
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -125,6 +126,7 @@ lbug_state lbug_data_type_get_num_elements_in_array(lbug_logical_type* data_type
     try {
         *out_result = ArrayType::getNumElements(*parent_type);
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;

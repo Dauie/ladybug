@@ -5,6 +5,7 @@
 #include "catalog/catalog.h"
 #include "catalog/catalog_entry/node_table_catalog_entry.h"
 #include "common/cast.h"
+#include "common/exception/constraint.h"
 #include "common/exception/message.h"
 #include "common/exception/runtime.h"
 #include "common/task_system/progress_bar.h"
@@ -443,10 +444,10 @@ void NodeTable::validatePkNotExists(const Transaction* transaction, ValueVector*
     auto& selVector = pkVector->state->getSelVector();
     DASSERT(selVector.getSelSize() == 1);
     if (pkVector->isNull(selVector[0])) {
-        throw RuntimeException(ExceptionMessage::nullPKException());
+        throw ConstraintException(ExceptionMessage::nullPKException());
     }
     if (lookupPK(transaction, pkVector, selVector[0], dummyOffset)) {
-        throw RuntimeException(
+        throw ConstraintException(
             ExceptionMessage::duplicatePKException(pkVector->getAsValue(selVector[0])->toString()));
     }
 }

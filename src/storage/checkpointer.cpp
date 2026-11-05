@@ -486,10 +486,10 @@ void Checkpointer::postCheckpointCleanup(bool canResetPageManagerToCurrent) try 
     releaseCheckpointLocks();
 } catch (const std::exception& e) {
     mainStorageManager->getWAL().poison(std::format("Checkpoint cleanup failed: {}", e.what()));
-    throw common::RuntimeException(std::format(
+    std::throw_with_nested(common::RuntimeException(std::format(
         "Checkpoint cleanup failed; the database refuses further writes until restart. Original "
         "error: {}",
-        e.what()));
+        e.what())));
 } catch (...) {
     mainStorageManager->getWAL().poison("Checkpoint cleanup failed: unknown exception");
     throw common::RuntimeException(

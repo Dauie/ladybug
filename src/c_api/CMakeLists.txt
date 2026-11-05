@@ -3,6 +3,7 @@ add_library(lbug_c_api
         connection.cpp
         database.cpp
         data_type.cpp
+        embedder.cpp
         file_system.cpp
         helpers.cpp
         flat_tuple.cpp

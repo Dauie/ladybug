@@ -49,7 +49,9 @@ public:
             deleteCurrentErroneousRow();
             return;
         }
-        baseErrorHandler.handleError(std::move(error.message), std::move(error.warningData));
+        baseErrorHandler.handleError(std::move(error.message), std::move(error.warningData),
+            error.kind == NodeCopyErrorKind::DUPLICATE_PK ||
+                error.kind == NodeCopyErrorKind::NULL_PK);
 
         setCurrentErroneousRow(error.key, error.nodeID);
         deleteCurrentErroneousRow();

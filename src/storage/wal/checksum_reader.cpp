@@ -43,7 +43,7 @@ void ChecksumReader::read(uint8_t* data, uint64_t size) {
         deserializer.read(data, size);
     } catch (const std::exception&) {
         if (currentEntrySize.has_value()) {
-            throw common::StorageException(std::string{checksumMismatchMessage});
+            std::throw_with_nested(common::StorageException(std::string{checksumMismatchMessage}));
         }
         throw;
     }

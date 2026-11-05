@@ -1,6 +1,6 @@
 #include "processor/operator/persistent/batch_insert_error_handler.h"
 
-#include "common/exception/copy.h"
+#include "common/exception/constraint.h"
 #include "common/uniq_lock.h"
 #include "main/client_context.h"
 #include "processor/execution_context.h"
@@ -12,8 +12,8 @@ namespace lbug {
 namespace processor {
 
 BatchInsertCachedError::BatchInsertCachedError(std::string message,
-    const std::optional<WarningSourceData>& warningData)
-    : message(std::move(message)), warningData(warningData) {}
+    const std::optional<WarningSourceData>& warningData, bool isConstraint)
+    : message(std::move(message)), warningData(warningData), isConstraint(isConstraint) {}
 
 BatchInsertErrorHandler::BatchInsertErrorHandler(ExecutionContext* context, bool ignoreErrors,
     std::shared_ptr<common::row_idx_t> sharedErrorCounter, std::mutex* sharedErrorCounterMtx)
@@ -35,12 +35,15 @@ bool BatchInsertErrorHandler::getIgnoreErrors() const {
 }
 
 void BatchInsertErrorHandler::handleError(std::string message,
-    const std::optional<WarningSourceData>& warningData) {
-    handleError(BatchInsertCachedError{std::move(message), warningData});
+    const std::optional<WarningSourceData>& warningData, bool isConstraint) {
+    handleError(BatchInsertCachedError{std::move(message), warningData, isConstraint});
 }
 
 void BatchInsertErrorHandler::handleError(BatchInsertCachedError error) {
     if (!ignoreErrors) {
+        if (error.isConstraint) {
+            throw CopyConstraintException(error.message);
+        }
         throw common::CopyException(error.message);
     }
 

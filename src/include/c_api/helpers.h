@@ -4,6 +4,8 @@
 #include <exception>
 #include <memory>
 #include <string>
+
+#include "common/enums/error_category.h"
 #ifdef _WIN32
 #include <time.h>
 
@@ -24,7 +26,10 @@ bool isCompleteFileSystem(const lbug_file_system& fileSystem);
 std::unique_ptr<lbug::common::FileSystem> createCallbackFileSystem(
     const lbug_file_system& fileSystem);
 
-void setLastCAPIErrorMessage(const std::string& message);
+void setLastCAPIErrorMessage(const std::string& message,
+    lbug::common::ErrorCategory category = lbug::common::ErrorCategory::RUNTIME);
+
+void setLastCAPIErrorMessage(const std::exception& exception);
 
 void clearLastCAPIErrorMessage();
 
@@ -43,7 +48,7 @@ char* convertToOwnedCString(const std::string& str);
 #define LBUG_C_API_GUARD_END(err_ret)                                                              \
     }                                                                                              \
     catch (const std::exception& e) {                                                              \
-        setLastCAPIErrorMessage(e.what());                                                         \
+        setLastCAPIErrorMessage(e);                                                                \
         return err_ret;                                                                            \
     }                                                                                              \
     catch (...) {                                                                                  \
@@ -56,7 +61,7 @@ char* convertToOwnedCString(const std::string& str);
 #define LBUG_C_API_GUARD_END_VOID                                                                  \
     }                                                                                              \
     catch (const std::exception& e) {                                                              \
-        setLastCAPIErrorMessage(e.what());                                                         \
+        setLastCAPIErrorMessage(e);                                                                \
     }                                                                                              \
     catch (...) {                                                                                  \
         setLastCAPIErrorMessage("unknown C++ exception in lbug C API");                            \

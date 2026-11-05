@@ -9,7 +9,8 @@
 namespace lbug {
 namespace common {
 
-class LBUG_API CheckpointException : public Exception {
+// Keep the original category when adding checkpoint context to an active exception.
+class LBUG_API CheckpointException : public Exception, public std::nested_exception {
 public:
     explicit CheckpointException(const std::exception& e) : Exception(e.what()) {};
     explicit CheckpointException(std::string message) : Exception(std::move(message)) {};

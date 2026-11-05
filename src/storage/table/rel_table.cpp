@@ -6,6 +6,7 @@
 #include <type_traits>
 
 #include "catalog/catalog_entry/rel_group_catalog_entry.h"
+#include "common/exception/constraint.h"
 #include "common/exception/message.h"
 #include "common/exception/runtime.h"
 #include "common/types/types.h"
@@ -351,7 +352,7 @@ bool RelTable::scanInternal(Transaction* transaction, TableScanState& scanState)
 
 static void throwRelMultiplicityConstraintError(const std::string& tableName, offset_t nodeOffset,
     RelDataDirection direction) {
-    throw RuntimeException(ExceptionMessage::violateRelMultiplicityConstraint(tableName,
+    throw ConstraintException(ExceptionMessage::violateRelMultiplicityConstraint(tableName,
         std::to_string(nodeOffset), RelDirectionUtils::relDirectionToString(direction)));
 }
 

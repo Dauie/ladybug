@@ -689,6 +689,7 @@ lbug_state lbug_value_get_list_element(lbug_value* value, uint64_t index, lbug_v
         out_value->_value = val;
         out_value->_is_owned_by_cpp = true;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -710,6 +711,7 @@ lbug_state lbug_value_get_struct_num_fields(lbug_value* value, uint64_t* out_res
         *out_result = StructType::getNumFields(data_type);
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -823,6 +825,7 @@ lbug_state lbug_value_get_recursive_rel_node_list(lbug_value* value, lbug_value*
     try {
         out_value->_value = RecursiveRelVal::getNodes(static_cast<Value*>(value->_value));
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -842,6 +845,7 @@ lbug_state lbug_value_get_recursive_rel_rel_list(lbug_value* value, lbug_value* 
     try {
         out_value->_value = RecursiveRelVal::getRels(static_cast<Value*>(value->_value));
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -870,6 +874,7 @@ lbug_state lbug_value_get_bool(lbug_value* value, bool* out_result) {
     try {
         *out_result = static_cast<Value*>(value->_value)->getValue<bool>();
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -888,6 +893,7 @@ lbug_state lbug_value_get_int8(lbug_value* value, int8_t* out_result) {
     try {
         *out_result = static_cast<Value*>(value->_value)->getValue<int8_t>();
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -906,6 +912,7 @@ lbug_state lbug_value_get_int16(lbug_value* value, int16_t* out_result) {
     try {
         *out_result = static_cast<Value*>(value->_value)->getValue<int16_t>();
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -924,6 +931,7 @@ lbug_state lbug_value_get_int32(lbug_value* value, int32_t* out_result) {
     try {
         *out_result = static_cast<Value*>(value->_value)->getValue<int32_t>();
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -942,6 +950,7 @@ lbug_state lbug_value_get_int64(lbug_value* value, int64_t* out_result) {
     try {
         *out_result = static_cast<Value*>(value->_value)->getValue<int64_t>();
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -960,6 +969,7 @@ lbug_state lbug_value_get_uint8(lbug_value* value, uint8_t* out_result) {
     try {
         *out_result = static_cast<Value*>(value->_value)->getValue<uint8_t>();
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -978,6 +988,7 @@ lbug_state lbug_value_get_uint16(lbug_value* value, uint16_t* out_result) {
     try {
         *out_result = static_cast<Value*>(value->_value)->getValue<uint16_t>();
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -996,6 +1007,7 @@ lbug_state lbug_value_get_uint32(lbug_value* value, uint32_t* out_result) {
     try {
         *out_result = static_cast<Value*>(value->_value)->getValue<uint32_t>();
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1014,6 +1026,7 @@ lbug_state lbug_value_get_uint64(lbug_value* value, uint64_t* out_result) {
     try {
         *out_result = static_cast<Value*>(value->_value)->getValue<uint64_t>();
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1034,6 +1047,7 @@ lbug_state lbug_value_get_int128(lbug_value* value, lbug_int128_t* out_result) {
         out_result->low = int128_val.low;
         out_result->high = int128_val.high;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1048,6 +1062,7 @@ lbug_state lbug_int128_t_from_string(const char* str, lbug_int128_t* out_result)
         out_result->low = int128_val.low;
         out_result->high = int128_val.high;
     } catch (ConversionException& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1062,6 +1077,7 @@ lbug_state lbug_int128_t_to_string(lbug_int128_t int128_val, char** out_result) 
     try {
         *out_result = convertToOwnedCString(TypeUtils::toString(c_int128));
     } catch (ConversionException& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1081,6 +1097,7 @@ lbug_state lbug_value_get_float(lbug_value* value, float* out_result) {
     try {
         *out_result = static_cast<Value*>(value->_value)->getValue<float>();
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1099,6 +1116,7 @@ lbug_state lbug_value_get_double(lbug_value* value, double* out_result) {
     try {
         *out_result = static_cast<Value*>(value->_value)->getValue<double>();
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1119,6 +1137,7 @@ lbug_state lbug_value_get_internal_id(lbug_value* value, lbug_internal_id_t* out
         out_result->offset = id.offset;
         out_result->table_id = id.tableID;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1138,6 +1157,7 @@ lbug_state lbug_value_get_date(lbug_value* value, lbug_date_t* out_result) {
         auto date_val = static_cast<Value*>(value->_value)->getValue<date_t>();
         out_result->days = date_val.days;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1157,6 +1177,7 @@ lbug_state lbug_value_get_timestamp(lbug_value* value, lbug_timestamp_t* out_res
         auto timestamp_val = static_cast<Value*>(value->_value)->getValue<timestamp_t>();
         out_result->value = timestamp_val.value;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1176,6 +1197,7 @@ lbug_state lbug_value_get_timestamp_ns(lbug_value* value, lbug_timestamp_ns_t* o
         auto timestamp_val = static_cast<Value*>(value->_value)->getValue<timestamp_ns_t>();
         out_result->value = timestamp_val.value;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1195,6 +1217,7 @@ lbug_state lbug_value_get_timestamp_ms(lbug_value* value, lbug_timestamp_ms_t* o
         auto timestamp_val = static_cast<Value*>(value->_value)->getValue<timestamp_ms_t>();
         out_result->value = timestamp_val.value;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1214,6 +1237,7 @@ lbug_state lbug_value_get_timestamp_sec(lbug_value* value, lbug_timestamp_sec_t*
         auto timestamp_val = static_cast<Value*>(value->_value)->getValue<timestamp_sec_t>();
         out_result->value = timestamp_val.value;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1233,6 +1257,7 @@ lbug_state lbug_value_get_timestamp_tz(lbug_value* value, lbug_timestamp_tz_t* o
         auto timestamp_val = static_cast<Value*>(value->_value)->getValue<timestamp_tz_t>();
         out_result->value = timestamp_val.value;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1270,6 +1295,7 @@ lbug_state lbug_value_get_interval(lbug_value* value, lbug_interval_t* out_resul
         out_result->days = interval_val.days;
         out_result->micros = interval_val.micros;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1289,6 +1315,7 @@ lbug_state lbug_value_get_string(lbug_value* value, char** out_result) {
         *out_result =
             convertToOwnedCString(static_cast<Value*>(value->_value)->getValue<std::string>());
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1311,6 +1338,7 @@ lbug_state lbug_value_get_blob(lbug_value* value, uint8_t** out_result, uint64_t
         memcpy(buffer, blob.data(), blob.size());
         *out_result = buffer;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1329,6 +1357,7 @@ lbug_state lbug_value_get_uuid(lbug_value* value, char** out_result) {
     try {
         *out_result = convertToOwnedCString(static_cast<Value*>(value->_value)->toString());
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1358,6 +1387,7 @@ lbug_state lbug_node_val_get_id_val(lbug_value* node_val, lbug_value* out_value)
         out_value->_value = id_val;
         out_value->_is_owned_by_cpp = true;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1378,6 +1408,7 @@ lbug_state lbug_node_val_get_label_val(lbug_value* node_val, lbug_value* out_val
         out_value->_value = label_val;
         out_value->_is_owned_by_cpp = true;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1396,6 +1427,7 @@ lbug_state lbug_node_val_get_property_size(lbug_value* node_val, uint64_t* out_r
     try {
         *out_result = NodeVal::getNumProperties(static_cast<Value*>(node_val->_value));
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1420,6 +1452,7 @@ lbug_state lbug_node_val_get_property_name_at(lbug_value* node_val, uint64_t ind
         }
         *out_result = convertToOwnedCString(property_name);
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1441,6 +1474,7 @@ lbug_state lbug_node_val_get_property_value_at(lbug_value* node_val, uint64_t in
         out_value->_value = value;
         out_value->_is_owned_by_cpp = true;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1460,6 +1494,7 @@ lbug_state lbug_node_val_to_string(lbug_value* node_val, char** out_result) {
         *out_result =
             convertToOwnedCString(NodeVal::toString(static_cast<Value*>(node_val->_value)));
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1480,6 +1515,7 @@ lbug_state lbug_rel_val_get_id_val(lbug_value* rel_val, lbug_value* out_value) {
         out_value->_value = id_val;
         out_value->_is_owned_by_cpp = true;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1500,6 +1536,7 @@ lbug_state lbug_rel_val_get_src_id_val(lbug_value* rel_val, lbug_value* out_valu
         out_value->_value = src_id_val;
         out_value->_is_owned_by_cpp = true;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1520,6 +1557,7 @@ lbug_state lbug_rel_val_get_dst_id_val(lbug_value* rel_val, lbug_value* out_valu
         out_value->_value = dst_id_val;
         out_value->_is_owned_by_cpp = true;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1540,6 +1578,7 @@ lbug_state lbug_rel_val_get_label_val(lbug_value* rel_val, lbug_value* out_value
         out_value->_value = label_val;
         out_value->_is_owned_by_cpp = true;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1558,6 +1597,7 @@ lbug_state lbug_rel_val_get_property_size(lbug_value* rel_val, uint64_t* out_res
     try {
         *out_result = RelVal::getNumProperties(static_cast<Value*>(rel_val->_value));
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1581,6 +1621,7 @@ lbug_state lbug_rel_val_get_property_name_at(lbug_value* rel_val, uint64_t index
         }
         *out_result = convertToOwnedCString(property_name);
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1602,6 +1643,7 @@ lbug_state lbug_rel_val_get_property_value_at(lbug_value* rel_val, uint64_t inde
         out_value->_value = value;
         out_value->_is_owned_by_cpp = true;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1620,6 +1662,7 @@ lbug_state lbug_rel_val_to_string(lbug_value* rel_val, char** out_result) {
     try {
         *out_result = convertToOwnedCString(RelVal::toString(static_cast<Value*>(rel_val->_value)));
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -1848,6 +1891,7 @@ lbug_state lbug_date_from_string(const char* str, lbug_date_t* out_result) {
         date_t date = Date::fromCString(str, strlen(str));
         out_result->days = date.days;
     } catch (ConversionException& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;

@@ -2,6 +2,7 @@
 #include "binder/query/reading_clause/bound_table_function_call.h"
 #include "catalog/catalog.h"
 #include "common/exception/binder.h"
+#include "main/client_context.h"
 #include "parser/expression/parsed_function_expression.h"
 #include "parser/query/reading_clause/in_query_call_clause.h"
 #include "transaction/transaction.h"
@@ -21,6 +22,7 @@ std::unique_ptr<BoundReadingClause> Binder::bindInQueryCall(const ReadingClause&
     auto expr = call.getFunctionExpression();
     auto functionExpr = expr->constPtrCast<ParsedFunctionExpression>();
     auto functionName = functionExpr->getFunctionName();
+    clientContext->validateFunctionAllowed(functionName);
     std::unique_ptr<BoundReadingClause> boundReadingClause;
     auto transaction = transaction::Transaction::Get(*clientContext);
     auto entry = Catalog::Get(*clientContext)->getFunctionEntry(transaction, functionName);

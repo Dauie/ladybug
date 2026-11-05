@@ -19,6 +19,7 @@
 #include "function/rewrite_function.h"
 #include "function/scalar_macro_function.h"
 #include "function/uuid/vector_uuid_functions.h"
+#include "main/client_context.h"
 #include "parser/expression/parsed_expression_visitor.h"
 #include "parser/expression/parsed_function_expression.h"
 #include "storage/storage_manager.h"
@@ -45,6 +46,7 @@ static bool containsExpressionNamed(const Expression& expression, const std::str
 std::shared_ptr<Expression> ExpressionBinder::bindFunctionExpression(const ParsedExpression& expr) {
     auto funcExpr = expr.constPtrCast<ParsedFunctionExpression>();
     auto functionName = funcExpr->getNormalizedFunctionName();
+    context->validateFunctionAllowed(functionName);
     auto transaction = transaction::Transaction::Get(*context);
     auto catalog = Catalog::Get(*context);
     auto entry = catalog->getFunctionEntry(transaction, functionName);

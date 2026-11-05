@@ -5,6 +5,7 @@
 
 #include "binder/binder.h"
 #include "binder/expression/parameter_expression.h"
+#include "common/exception/binder.h"
 #include "common/exception/checkpoint.h"
 #include "common/exception/connection.h"
 #include "common/exception/interrupt.h"
@@ -347,6 +348,26 @@ void ClientContext::removeScalarFunction(const std::string& name) {
         TransactionHelper::TransactionCommitAction::COMMIT_IF_NEW);
 }
 
+void ClientContext::setFunctionAllowlist(std::optional<std::unordered_set<std::string>> names) {
+    std::optional<std::unordered_set<std::string>> normalized;
+    if (names) {
+        normalized.emplace();
+        for (const auto& name : *names) {
+            normalized->insert(StringUtils::getUpper(name));
+        }
+    }
+    lock_t lck{mtx};
+    functionAllowlist = std::move(normalized);
+    ++functionPolicyVersion;
+}
+
+void ClientContext::validateFunctionAllowed(const std::string& name) const {
+    if (functionAllowlist && !functionAllowlist->contains(StringUtils::getUpper(name))) {
+        throw BinderException(
+            std::format("Function {} is not allowed by the connection policy.", name));
+    }
+}
+
 void ClientContext::cleanUp() {
     VirtualFileSystem::GetUnsafe(*this)->cleanUP(this);
 }
@@ -379,11 +400,13 @@ std::unique_ptr<PreparedStatement> ClientContext::prepareWithParams(std::string_
     try {
         parsedStatements = parseQuery(query);
     } catch (std::exception& exception) {
-        return PreparedStatement::getPreparedStatementWithError(exception.what());
+        return PreparedStatement::getPreparedStatementWithError(exception.what(),
+            classifyException(exception));
     }
     if (parsedStatements.size() > 1) {
         return PreparedStatement::getPreparedStatementWithError(
-            "Connection Exception: We do not support prepare multiple statements.");
+            "Connection Exception: We do not support prepare multiple statements.",
+            ErrorCategory::PARSER);
     }
 
     // The binder deals with the parameter values as shared ptrs
@@ -424,13 +447,24 @@ std::unique_ptr<QueryResult> ClientContext::executeWithParams(PreparedStatement*
     lock_t lck{mtx};
     InternalCatalogFlagGuard flagGuard{*this};
     if (!preparedStatement->isSuccess()) {
-        return QueryResult::getQueryResultWithError(preparedStatement->errMsg);
+        return QueryResult::getQueryResultWithError(preparedStatement->errMsg,
+            preparedStatement->errorCategory);
+    }
+    if (preparedStatement->ownerManager.lock() != cachedPreparedStatementManager) {
+        return QueryResult::getQueryResultWithError(
+            "Prepared statement belongs to a different connection.", ErrorCategory::BINDER);
+    }
+    // Rebinding a cached rewrite is not sufficient: it may no longer name the original function.
+    // Refuse old handles before parameters or any cached plan can run under a new policy.
+    if (preparedStatement->functionPolicyVersion != functionPolicyVersion) {
+        return QueryResult::getQueryResultWithError(
+            "Function policy changed; prepare the statement again.", ErrorCategory::BINDER);
     }
     const auto useCachedPlan = preparedStatement->canReuseCachedPlanWith(inputParams);
     try {
         bindParametersNoLock(*preparedStatement, inputParams);
     } catch (std::exception& e) {
-        return QueryResult::getQueryResultWithError(e.what());
+        return QueryResult::getQueryResultWithError(e.what(), classifyException(e));
     }
     auto name = preparedStatement->getName();
     // LCOV_EXCL_START
@@ -499,7 +533,7 @@ std::unique_ptr<QueryResult> ClientContext::queryNoLock(std::string_view query,
     try {
         parsedStatements = parseQuery(query);
     } catch (std::exception& exception) {
-        return QueryResult::getQueryResultWithError(exception.what());
+        return QueryResult::getQueryResultWithError(exception.what(), classifyException(exception));
     }
     std::unique_ptr<QueryResult> queryResult;
     QueryResult* lastResult = nullptr;
@@ -609,6 +643,7 @@ ClientContext::PrepareResult ClientContext::prepareNoLock(
     std::shared_ptr<Statement> parsedStatement, bool shouldCommitNewTransaction,
     std::unordered_map<std::string, std::shared_ptr<Value>> inputParams) {
     auto preparedStatement = std::make_unique<PreparedStatement>();
+    preparedStatement->functionPolicyVersion = functionPolicyVersion;
     auto cachedStatement = std::make_unique<CachedPreparedStatement>();
     cachedStatement->parsedStatement = parsedStatement;
     cachedStatement->useInternalCatalogEntry = useInternalCatalogEntry_;
@@ -652,6 +687,7 @@ ClientContext::PrepareResult ClientContext::prepareNoLock(
     } catch (std::exception& exception) {
         preparedStatement->success = false;
         preparedStatement->errMsg = exception.what();
+        preparedStatement->errorCategory = classifyException(exception);
     }
     cachedStatement->planVersion = localDatabase->getCatalog()->getPlanVersion();
     prepareTimer.stop();
@@ -804,7 +840,8 @@ std::unique_ptr<QueryResult> ClientContext::executeNoLock(PreparedStatement* pre
     CachedPreparedStatement* cachedStatement, std::optional<uint64_t> queryID,
     QueryConfig queryConfig, bool cachePhysicalPlan) {
     if (!preparedStatement->isSuccess()) {
-        return QueryResult::getQueryResultWithError(preparedStatement->errMsg);
+        return QueryResult::getQueryResultWithError(preparedStatement->errMsg,
+            preparedStatement->errorCategory);
     }
     useInternalCatalogEntry_ = cachedStatement->useInternalCatalogEntry;
     this->resetActiveQuery();
@@ -926,7 +963,7 @@ std::unique_ptr<QueryResult> ClientContext::handleFailedExecution(std::optional<
     if (queryID.has_value()) {
         progressBar->endProgress(queryID.value());
     }
-    return QueryResult::getQueryResultWithError(e.what());
+    return QueryResult::getQueryResultWithError(e.what(), classifyException(e));
 }
 
 ClientContext::TransactionHelper::TransactionCommitAction

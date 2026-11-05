@@ -411,13 +411,53 @@ typedef enum {
     LBUG_STATEMENT_CREATE_TYPE = 39,
     LBUG_STATEMENT_EXTENSION_CLAUSE = 40,
     LBUG_STATEMENT_CREATE_GRAPH = 41,
-    LBUG_STATEMENT_USE_GRAPH = 42
+    LBUG_STATEMENT_USE_GRAPH = 42,
+    LBUG_STATEMENT_UNKNOWN = 255
 } lbug_statement_type;
+
+/** Syntax-only information; LOAD FROM is a clause within a QUERY. */
+typedef struct {
+    lbug_statement_type type;
+    bool has_load_from;
+} lbug_statement_info;
+
+/** Stable error categories. Unclassified engine failures are RUNTIME. */
+typedef enum {
+    LBUG_ERROR_NONE = 0,
+    LBUG_ERROR_PARSER = 1,
+    LBUG_ERROR_BINDER = 2,
+    LBUG_ERROR_RUNTIME = 3,
+    LBUG_ERROR_CONSTRAINT = 4,
+    LBUG_ERROR_INTERRUPT = 5,
+    LBUG_ERROR_IO = 6
+} lbug_error_category;
 
 /**
  * @brief enum class for lbug function return state.
  */
 typedef enum { LbugSuccess = 0, LbugError = 1 } lbug_state;
+
+/**
+ * @brief Parses exactly one statement without a database, binding, rewriting, or execution.
+ * Unknown catalog objects do not fail syntax parsing. Extension transformer callbacks are not
+ * invoked. On failure, out_info (when non-null) has UNKNOWN type and no flags; read the
+ * thread-local last error. In particular, check has_load_from before preparing a QUERY.
+ */
+LBUG_C_API lbug_state lbug_parse_statement(const char* query, lbug_statement_info* out_info);
+
+/**
+ * @brief Copies a case-insensitive allowlist of explicit scalar, aggregate, macro, rewrite and
+ * table-function names for this connection. The default is unrestricted; zero names denies all
+ * explicit function calls (names may be null only with zero count). Parser-lowered syntax also
+ * uses function names, e.g. COUNT_STAR, +, and NEGATE. Implicit binder-inserted operations are not
+ * checked as additional calls. Unknown or unlisted calls fail during binding before callbacks.
+ * Changing the policy invalidates existing prepared statements; prepare them again.
+ * This is a function policy, not a statement/file-access policy; parse and check statements too.
+ */
+LBUG_C_API lbug_state lbug_connection_set_function_allowlist(lbug_connection* connection,
+    const char* const* names, uint64_t num_names);
+/** Restores unrestricted function binding, invalidating existing prepared statements. */
+LBUG_C_API lbug_state lbug_connection_clear_function_allowlist(lbug_connection* connection);
 
 // Database
 /**
@@ -616,6 +656,19 @@ LBUG_C_API lbug_statement_type lbug_prepared_statement_get_statement_type(
  */
 LBUG_C_API char* lbug_prepared_statement_get_error_message(
     lbug_prepared_statement* prepared_statement);
+/** Returns NONE on success; invalid handles report RUNTIME. Does not consume the error. */
+LBUG_C_API lbug_error_category lbug_prepared_statement_get_error_category(
+    lbug_prepared_statement* prepared_statement);
+/**
+ * @brief Enumerates distinct parameter names, including those awaiting their first binding.
+ * Names are ordered lexicographically, omit '$', and exclude extra names bound by the caller.
+ * Both calls require a successfully prepared statement. The name is an owned string to free with
+ * lbug_destroy_string; the count is zero and the name is null on failure.
+ */
+LBUG_C_API lbug_state lbug_prepared_statement_get_parameter_count(
+    lbug_prepared_statement* prepared_statement, uint64_t* out_count);
+LBUG_C_API lbug_state lbug_prepared_statement_get_parameter_name(
+    lbug_prepared_statement* prepared_statement, uint64_t index, char** out_name);
 /**
  * @brief Returns the prepared statement's result schema as ArrowSchema, without executing
  * the query. The schema is derived from the bound and planned statement, so this is cheap
@@ -802,6 +855,10 @@ LBUG_C_API lbug_state lbug_prepared_statement_bind_interval(
  */
 LBUG_C_API lbug_state lbug_prepared_statement_bind_string(
     lbug_prepared_statement* prepared_statement, const char* param_name, const char* value);
+/** Copies exactly length bytes, including embedded NULs. A null value requires length zero. */
+LBUG_C_API lbug_state lbug_prepared_statement_bind_string_with_length(
+    lbug_prepared_statement* prepared_statement, const char* param_name, const char* value,
+    uint64_t length);
 /**
  * @brief Binds the given lbug value to the given parameter name in the prepared statement.
  * @param prepared_statement The prepared statement instance to bind the value.
@@ -830,6 +887,9 @@ LBUG_C_API bool lbug_query_result_is_success(lbug_query_result* query_result);
  * @return The error message if the query has failed, or null if the query is successful.
  */
 LBUG_C_API char* lbug_query_result_get_error_message(lbug_query_result* query_result);
+/** Returns NONE on success; invalid handles report RUNTIME. Does not consume the error. */
+LBUG_C_API lbug_error_category lbug_query_result_get_error_category(
+    lbug_query_result* query_result);
 /**
  * @brief Returns the number of columns in the query result.
  * @param query_result The query result instance to return.
@@ -1174,6 +1234,10 @@ LBUG_C_API lbug_value* lbug_value_create_interval(lbug_interval_t val_);
  * @param val_ The string value of the value to create.
  */
 LBUG_C_API lbug_value* lbug_value_create_string(const char* val_);
+/** Copies exactly length bytes, including embedded NULs. A null value requires length zero.
+ * Destroy the returned value with lbug_value_destroy. Returns null on failure.
+ */
+LBUG_C_API lbug_value* lbug_value_create_string_with_length(const char* value, uint64_t length);
 /**
  * @brief Creates a value with JSON type and the given JSON string representation.
  * Caller is responsible for destroying the returned value.
@@ -1533,6 +1597,13 @@ LBUG_C_API lbug_state lbug_value_get_decimal_as_string(lbug_value* value, char**
  */
 LBUG_C_API lbug_state lbug_value_get_string(lbug_value* value, char** out_result);
 /**
+ * @brief Copies a non-null STRING, including embedded NULs, and returns its byte length.
+ * The allocation also has a trailing NUL not counted in the length. Free it with
+ * lbug_destroy_string. On failure, provided outputs are set to null and zero.
+ */
+LBUG_C_API lbug_state lbug_value_get_string_with_length(lbug_value* value, char** out_result,
+    uint64_t* out_length);
+/**
  * @brief Returns the blob value of the given value. The value must be of type BLOB.
  * @param value The value to return.
  * @param[out] out_result The output parameter that will hold the blob value.
@@ -1827,4 +1898,11 @@ LBUG_C_API uint64_t lbug_get_storage_version();
  * using lbug_destroy_string(). Returns nullptr if no error has been recorded.
  */
 LBUG_C_API char* lbug_get_last_error();
+/**
+ * @brief Returns the category of the last recorded C API error on this thread.
+ * Reading the category or taking its message does not reset the category. Operations that clear
+ * the last-error message also reset the category to NONE; result/statement category getters are
+ * independent of this thread-local slot.
+ */
+LBUG_C_API lbug_error_category lbug_get_last_error_category();
 #undef LBUG_C_API

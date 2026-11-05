@@ -165,6 +165,11 @@ public:
     void addScalarFunction(std::string name, function::function_set definitions);
     void removeScalarFunction(const std::string& name);
 
+    // An absent policy is unrestricted; an empty set permits no explicit calls.
+    void setFunctionAllowlist(std::optional<std::unordered_set<std::string>> names);
+    // Called while holding the connection lock, before binding user function arguments/callbacks.
+    void validateFunctionAllowed(const std::string& name) const;
+
     void cleanUp();
 
     // Lifecycle: used by Connection close to wait until no query is in flight (avoids SIGSEGV
@@ -291,6 +296,8 @@ private:
     std::atomic<uint32_t> activeQueryCount{0};
     std::mutex mtxForClose;
     std::condition_variable cvForClose;
+    std::optional<std::unordered_set<std::string>> functionAllowlist;
+    uint64_t functionPolicyVersion = 0;
 };
 
 } // namespace main

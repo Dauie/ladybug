@@ -5,6 +5,7 @@
 #include "common/api.h"
 #include "common/arrow/arrow.h"
 #include "common/database_lifecycle_manager.h"
+#include "common/enums/error_category.h"
 #include "common/types/types.h"
 #include "query_summary.h"
 
@@ -44,6 +45,7 @@ public:
      * @return error message of the query execution if the query fails.
      */
     LBUG_API std::string getErrorMessage() const;
+    common::ErrorCategory getErrorCategory() const { return errorCategory; }
     /**
      * @return number of columns in query result.
      */
@@ -131,7 +133,8 @@ public:
     void setDBLifeCycleManager(
         std::shared_ptr<common::DatabaseLifeCycleManager> dbLifeCycleManager);
 
-    static std::unique_ptr<QueryResult> getQueryResultWithError(const std::string& errorMessage);
+    static std::unique_ptr<QueryResult> getQueryResultWithError(const std::string& errorMessage,
+        common::ErrorCategory category = common::ErrorCategory::RUNTIME);
 
     template<class TARGET>
     TARGET& cast() {
@@ -188,6 +191,7 @@ protected:
     QueryResultIterator queryResultIterator;
 
     std::shared_ptr<common::DatabaseLifeCycleManager> dbLifeCycleManager;
+    common::ErrorCategory errorCategory = common::ErrorCategory::NONE;
 };
 
 } // namespace main
