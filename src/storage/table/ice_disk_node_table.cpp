@@ -76,8 +76,9 @@ void IceDiskNodeTable::initScanState(Transaction* transaction, TableScanState& s
                 std::make_unique<ParquetReader>(parquetFilePath, columnSkips, context);
             iceDiskScanState.initialized = true;
         } catch (const std::exception& e) {
-            throw RuntimeException("Failed to initialize parquet reader for file '" +
-                                   parquetFilePath + "': " + e.what());
+            std::throw_with_nested(
+                RuntimeException("Failed to initialize parquet reader for file '" +
+                                 parquetFilePath + "': " + e.what()));
         }
     }
 

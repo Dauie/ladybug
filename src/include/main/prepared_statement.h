@@ -9,6 +9,7 @@
 
 #include "common/api.h"
 #include "common/arrow/arrow.h"
+#include "common/enums/error_category.h"
 #include "common/types/value/value.h"
 #include "query_summary.h"
 
@@ -122,6 +123,7 @@ public:
      * @return the error message if the query is not prepared successfully.
      */
     LBUG_API std::string getErrorMessage() const;
+    common::ErrorCategory getErrorCategory() const { return errorCategory; }
     /**
      * @return the prepared statement is read-only or not.
      */
@@ -161,7 +163,8 @@ public:
     common::StatementType getStatementType() const;
 
     static std::unique_ptr<PreparedStatement> getPreparedStatementWithError(
-        const std::string& errorMessage);
+        const std::string& errorMessage,
+        common::ErrorCategory category = common::ErrorCategory::RUNTIME);
 
 private:
     bool success = true;
@@ -178,6 +181,8 @@ private:
     // Set once an execution has bound the statement with values for its unknown parameters.
     bool unknownParametersBound = false;
     std::unordered_map<std::string, std::shared_ptr<common::Value>> parameterMap;
+    common::ErrorCategory errorCategory = common::ErrorCategory::NONE;
+    uint64_t functionPolicyVersion = 0;
 };
 
 } // namespace main

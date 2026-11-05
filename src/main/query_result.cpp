@@ -118,11 +118,13 @@ void QueryResult::setDBLifeCycleManager(
     }
 }
 
-std::unique_ptr<QueryResult> QueryResult::getQueryResultWithError(const std::string& errorMessage) {
+std::unique_ptr<QueryResult> QueryResult::getQueryResultWithError(const std::string& errorMessage,
+    ErrorCategory category) {
     // TODO(Xiyang): consider introduce error query result class.
     auto queryResult = std::make_unique<MaterializedQueryResult>();
     queryResult->success = false;
     queryResult->errMsg = errorMessage;
+    queryResult->errorCategory = category;
     queryResult->nextQueryResult = nullptr;
     queryResult->queryResultIterator = QueryResultIterator{queryResult.get()};
     return queryResult;

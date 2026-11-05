@@ -37,8 +37,9 @@ static lbug_state initDatabase(const char* database_path, lbug_system_config con
                     createCallbackFileSystem(*file_system)) :
                 new Database(database_path_str, systemConfig);
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         out_database->_database = nullptr;
-        setLastCAPIErrorMessage(e.what());
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;

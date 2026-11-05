@@ -148,7 +148,7 @@ bool checkNullKey(ValueVector* keyVector, offset_t vectorOffset,
     bool isNull = keyVector->isNull(vectorOffset);
     if (isNull) {
         errorHandler->handleError(ExceptionMessage::nullPKException(),
-            getWarningSourceData(warningDataVectors, vectorOffset));
+            getWarningSourceData(warningDataVectors, vectorOffset), true /* isConstraint */);
     }
     return !isNull;
 }
@@ -211,7 +211,7 @@ void fillOffsetArraysFromVectorInternal(transaction::Transaction* transaction,
                 if (!found) {
                     errorHandler->handleError(ExceptionMessage::nonExistentPKException(
                                                   keyVector->getAsValue(pos)->toString()),
-                        getWarningSourceData(warningDataVectors, pos));
+                        getWarningSourceData(warningDataVectors, pos), true /* isConstraint */);
                 } else {
                     resultManager.insertEntry(lookupOffset, pos);
                 }

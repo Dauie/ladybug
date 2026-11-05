@@ -149,10 +149,11 @@ PreparedStatement::~PreparedStatement() {
 }
 
 std::unique_ptr<PreparedStatement> PreparedStatement::getPreparedStatementWithError(
-    const std::string& errorMessage) {
+    const std::string& errorMessage, ErrorCategory category) {
     auto preparedStatement = std::make_unique<PreparedStatement>();
     preparedStatement->success = false;
     preparedStatement->errMsg = errorMessage;
+    preparedStatement->errorCategory = category;
     return preparedStatement;
 }
 

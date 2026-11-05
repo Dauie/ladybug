@@ -15,6 +15,7 @@ namespace binder {
 
 BoundTableScanInfo Binder::bindTableFunc(const std::string& tableFuncName,
     const parser::ParsedExpression& expr, std::vector<parser::YieldVariable> yieldVariables) {
+    clientContext->validateFunctionAllowed(tableFuncName);
     auto catalog = catalog::Catalog::Get(*clientContext);
     auto transaction = transaction::Transaction::Get(*clientContext);
     auto entry = catalog->getFunctionEntry(transaction, tableFuncName,

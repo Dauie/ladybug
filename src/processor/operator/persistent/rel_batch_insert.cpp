@@ -2,6 +2,7 @@
 
 #include "catalog/catalog.h"
 #include "common/cast.h"
+#include "common/exception/constraint.h"
 #include "common/exception/copy.h"
 #include "common/exception/message.h"
 #include "common/task_system/progress_bar.h"
@@ -251,7 +252,7 @@ void RelBatchInsert::checkRelMultiplicityConstraint(const RelGroupCatalogEntry& 
     }
     for (auto i = 0u; i < csrHeader.length->getNumValues(); i++) {
         if (csrHeader.length->getValue<length_t>(i) > 1) {
-            throw CopyException(ExceptionMessage::violateRelMultiplicityConstraint(
+            throw CopyConstraintException(ExceptionMessage::violateRelMultiplicityConstraint(
                 relInfo.tableName, std::to_string(i + startNodeOffset),
                 RelDirectionUtils::relDirectionToString(relInfo.direction)));
         }

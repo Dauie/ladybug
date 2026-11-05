@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "common/assert.h"
+#include "common/exception/constraint.h"
 #include "common/exception/message.h"
 #include "common/vector/value_vector.h"
 #include "processor/execution_context.h"
@@ -25,7 +26,7 @@ void NodeTableDeleteInfo::init(const ResultSet& resultSet) {
 
 static void throwDeleteNodeWithConnectedEdgesError(const std::string& tableName,
     offset_t nodeOffset, RelDataDirection direction) {
-    throw RuntimeException(ExceptionMessage::violateDeleteNodeWithConnectedEdgesConstraint(
+    throw ConstraintException(ExceptionMessage::violateDeleteNodeWithConnectedEdgesConstraint(
         tableName, std::to_string(nodeOffset), RelDirectionUtils::relDirectionToString(direction)));
 }
 

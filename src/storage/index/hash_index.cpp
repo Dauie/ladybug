@@ -4,6 +4,7 @@
 #include <limits>
 
 #include "common/assert.h"
+#include "common/exception/constraint.h"
 #include "common/exception/message.h"
 #include "common/serializer/deserializer.h"
 #include "common/types/int128_t.h"
@@ -648,10 +649,10 @@ void PrimaryKeyIndex::commitInsert(Transaction* transaction, const ValueVector& 
         const auto offset = nodeIDVector.readNodeOffset(nodeIDPos);
         const auto pkPos = pkVector.state->getSelVector()[i];
         if (pkVector.isNull(pkPos)) {
-            throw RuntimeException(ExceptionMessage::nullPKException());
+            throw ConstraintException(ExceptionMessage::nullPKException());
         }
         if (!insert(transaction, &pkVector, pkPos, offset, pkInsertState.isVisible)) {
-            throw RuntimeException(
+            throw ConstraintException(
                 ExceptionMessage::duplicatePKException(pkVector.getAsValue(pkPos)->toString()));
         }
     }

@@ -12,6 +12,7 @@
 #include "common/assert.h"
 #include "common/cast.h"
 #include "common/data_chunk/data_chunk_state.h"
+#include "common/exception/constraint.h"
 #include "common/exception/message.h"
 #include "common/exception/runtime.h"
 #include "common/file_system/file_info.h"
@@ -173,7 +174,7 @@ struct NoIndexPKValidatorImpl final : NoIndexPKValidator {
         for (auto i = 0u; i < numValues; ++i) {
             const auto pos = startOffset + i;
             if (pkChunk.isNull(pos)) {
-                throw RuntimeException(ExceptionMessage::nullPKException());
+                throw ConstraintException(ExceptionMessage::nullPKException());
             }
             const auto value = readPKValue<T>(pkChunk, pos);
             bufferBytes += approxValueBytes(value);
@@ -277,7 +278,7 @@ private:
         std::sort(values.begin(), values.end());
         for (size_t i = 1; i < values.size(); ++i) {
             if (values[i] == values[i - 1]) {
-                throw RuntimeException(
+                throw ConstraintException(
                     ExceptionMessage::duplicatePKException(pkValueToString<T>(values[i])));
             }
         }
@@ -348,7 +349,7 @@ private:
             auto& src = sources[idx];
             DASSERT(src.hasCur);
             if (last.has_value() && src.cur == *last) {
-                throw RuntimeException(
+                throw ConstraintException(
                     ExceptionMessage::duplicatePKException(pkValueToString<T>(src.cur)));
             }
             last = src.cur;

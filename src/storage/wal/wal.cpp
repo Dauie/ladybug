@@ -117,10 +117,10 @@ bool WAL::rotateForCheckpoint(main::ClientContext* /*context*/) {
             frozenWALHasCheckpointRecord = false;
             checkpointRecordMayExist = false;
             poisonNoLock(std::string{"WAL rotation failed: "} + e.what());
-            throw RuntimeException(
+            std::throw_with_nested(RuntimeException(
                 "WAL rotation may have reached storage; database is in a panic state and refuses "
                 "further writes until restart. Original error: " +
-                std::string{e.what()});
+                std::string{e.what()}));
         }
         throw;
     } catch (...) {
@@ -191,10 +191,10 @@ void WAL::logAndFlushCheckpointToFrozen(main::ClientContext* context) {
     } catch (const std::exception& e) {
         std::unique_lock lck{mtx};
         poisonNoLock(std::string{"WAL sync failed: "} + e.what());
-        throw RuntimeException(
+        std::throw_with_nested(RuntimeException(
             "WAL sync failed; database is in a panic state and refuses further writes until "
             "restart. Original error: " +
-            std::string{e.what()});
+            std::string{e.what()}));
     } catch (...) {
         std::unique_lock lck{mtx};
         poisonNoLock("WAL sync failed: unknown exception");
@@ -245,11 +245,12 @@ void WAL::retireFileNoLock(const std::string& path, const char* walName) {
         }
     } catch (const std::exception& e) {
         poisonNoLock(std::string{walName} + " WAL retirement failed: " + e.what());
-        throw RuntimeException(std::string{walName} +
-                               " WAL retirement failed; database is in a panic state and refuses "
-                               "further writes until restart. Correct persistent filesystem "
-                               "errors before reopening. Original error: " +
-                               e.what());
+        std::throw_with_nested(
+            RuntimeException(std::string{walName} +
+                             " WAL retirement failed; database is in a panic state and refuses "
+                             "further writes until restart. Correct persistent filesystem "
+                             "errors before reopening. Original error: " +
+                             e.what()));
     } catch (...) {
         poisonNoLock(std::string{walName} + " WAL retirement failed: unknown exception");
         throw RuntimeException(std::string{walName} +
@@ -293,10 +294,10 @@ void WAL::waitForDurabilityNoLock(uint64_t commitSequence, std::unique_lock<std:
             } catch (const std::exception& e) {
                 lck.lock();
                 poisonNoLock(std::string{"WAL sync failed: "} + e.what());
-                throw RuntimeException(
+                std::throw_with_nested(RuntimeException(
                     "WAL sync failed; database is in a panic state and refuses further writes "
                     "until restart. Original error: " +
-                    std::string{e.what()});
+                    std::string{e.what()}));
             } catch (...) {
                 lck.lock();
                 poisonNoLock("WAL sync failed: unknown exception");
@@ -327,10 +328,10 @@ void WAL::flushAndSyncNoLock() {
         }
     } catch (const std::exception& e) {
         poisonNoLock(std::string{"WAL sync failed: "} + e.what());
-        throw RuntimeException(
+        std::throw_with_nested(RuntimeException(
             "WAL sync failed; database is in a panic state and refuses further writes until "
             "restart. Original error: " +
-            std::string{e.what()});
+            std::string{e.what()}));
     } catch (...) {
         poisonNoLock("WAL sync failed: unknown exception");
         throw RuntimeException(

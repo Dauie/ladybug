@@ -48,6 +48,7 @@ public:
 
     bool failOpens = false;
     bool failWrites = false;
+    bool failSyncs = false;
     uint64_t syncs = 0;
 
 private:
@@ -107,7 +108,7 @@ private:
         auto* fs = self(userData);
         std::lock_guard lock{fs->mutex};
         fs->syncs++;
-        return true;
+        return !fs->failSyncs;
     }
 
     static bool truncate(void* userData, void* file, uint64_t size) {
@@ -258,6 +259,7 @@ TEST_F(CApiFileSystemTest, FailedCallbacksBecomeErrors) {
     ASSERT_EQ(lbug_database_init_with_file_system(path.c_str(), config, &callbacks, &database),
         LbugError);
     EXPECT_EQ(database._database, nullptr);
+    EXPECT_EQ(lbug_get_last_error_category(), LBUG_ERROR_IO);
     char* error = lbug_get_last_error();
     ASSERT_NE(error, nullptr);
     EXPECT_NE(std::string(error).find("Cannot open file"), std::string::npos) << error;
@@ -269,9 +271,30 @@ TEST_F(CApiFileSystemTest, FailedCallbacksBecomeErrors) {
     fs.failWrites = true;
     lbug_query_result result;
     EXPECT_EQ(lbug_connection_query(&connection, "CREATE (:Item {id: 1});", &result), LbugError);
+    EXPECT_EQ(lbug_query_result_get_error_category(&result), LBUG_ERROR_IO);
+    EXPECT_EQ(lbug_get_last_error_category(), LBUG_ERROR_IO);
     lbug_query_result_destroy(&result);
     fs.failWrites = false;
     closeStore();
+}
+
+TEST_F(CApiFileSystemTest, CommitAndCheckpointWrappersKeepIoCategory) {
+    for (const char* statement : {"CREATE (:Item {id: 2});", "CHECKPOINT;"}) {
+        SCOPED_TRACE(statement);
+        MemoryFileSystem fs;
+        openStore(fs);
+        run("CALL force_checkpoint_on_close=false;");
+        run("CREATE NODE TABLE Item(id INT64, PRIMARY KEY(id));");
+        run("CREATE (:Item {id: 1});");
+        fs.failSyncs = true;
+        lbug_query_result result{};
+        EXPECT_EQ(lbug_connection_query(&connection, statement, &result), LbugError);
+        EXPECT_EQ(lbug_query_result_get_error_category(&result), LBUG_ERROR_IO);
+        EXPECT_EQ(lbug_get_last_error_category(), LBUG_ERROR_IO);
+        lbug_query_result_destroy(&result);
+        fs.failSyncs = false;
+        closeStore();
+    }
 }
 
 TEST_F(CApiFileSystemTest, IncompleteCallbacksAreRefused) {

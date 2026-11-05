@@ -124,7 +124,7 @@ lbug_state lbug_prepared_statement_get_arrow_schema(lbug_prepared_statement* pre
         *out_schema = *statement->getArrowSchema();
         return LbugSuccess;
     } catch (Exception& e) {
-        setLastCAPIErrorMessage(e.what());
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -142,6 +142,7 @@ lbug_state lbug_prepared_statement_bind_bool(lbug_prepared_statement* prepared_s
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -159,6 +160,7 @@ lbug_state lbug_prepared_statement_bind_int64(lbug_prepared_statement* prepared_
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -176,6 +178,7 @@ lbug_state lbug_prepared_statement_bind_int32(lbug_prepared_statement* prepared_
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -193,6 +196,7 @@ lbug_state lbug_prepared_statement_bind_int16(lbug_prepared_statement* prepared_
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -210,6 +214,7 @@ lbug_state lbug_prepared_statement_bind_int8(lbug_prepared_statement* prepared_s
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -227,6 +232,7 @@ lbug_state lbug_prepared_statement_bind_uint64(lbug_prepared_statement* prepared
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -244,6 +250,7 @@ lbug_state lbug_prepared_statement_bind_uint32(lbug_prepared_statement* prepared
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -261,6 +268,7 @@ lbug_state lbug_prepared_statement_bind_uint16(lbug_prepared_statement* prepared
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -278,6 +286,7 @@ lbug_state lbug_prepared_statement_bind_uint8(lbug_prepared_statement* prepared_
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -295,6 +304,7 @@ lbug_state lbug_prepared_statement_bind_double(lbug_prepared_statement* prepared
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -312,6 +322,7 @@ lbug_state lbug_prepared_statement_bind_float(lbug_prepared_statement* prepared_
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -329,6 +340,7 @@ lbug_state lbug_prepared_statement_bind_date(lbug_prepared_statement* prepared_s
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -346,6 +358,7 @@ lbug_state lbug_prepared_statement_bind_timestamp_ns(lbug_prepared_statement* pr
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -363,6 +376,7 @@ lbug_state lbug_prepared_statement_bind_timestamp_ms(lbug_prepared_statement* pr
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -380,6 +394,7 @@ lbug_state lbug_prepared_statement_bind_timestamp_sec(lbug_prepared_statement* p
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -397,6 +412,7 @@ lbug_state lbug_prepared_statement_bind_timestamp_tz(lbug_prepared_statement* pr
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -414,6 +430,7 @@ lbug_state lbug_prepared_statement_bind_timestamp(lbug_prepared_statement* prepa
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -432,6 +449,7 @@ lbug_state lbug_prepared_statement_bind_interval(lbug_prepared_statement* prepar
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -449,6 +467,7 @@ lbug_state lbug_prepared_statement_bind_string(lbug_prepared_statement* prepared
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -466,6 +485,7 @@ lbug_state lbug_prepared_statement_bind_value(lbug_prepared_statement* prepared_
             std::move(value_ptr));
         return LbugSuccess;
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)

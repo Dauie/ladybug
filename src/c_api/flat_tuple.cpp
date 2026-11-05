@@ -29,6 +29,7 @@ lbug_state lbug_flat_tuple_get_value(lbug_flat_tuple* flat_tuple, uint64_t index
     try {
         _value = flat_tuple_ptr->getValue(index);
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     out_value->_value = _value;

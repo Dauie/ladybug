@@ -7,6 +7,7 @@
 
 namespace {
 thread_local std::string lastCAPIErrorMessage;
+thread_local lbug::common::ErrorCategory lastCAPIErrorCategory = lbug::common::ErrorCategory::NONE;
 }
 
 #ifdef _WIN32
@@ -52,12 +53,18 @@ int32_t convertTimeToTm(time_t time, struct tm* out_tm) {
 }
 #endif
 
-void setLastCAPIErrorMessage(const std::string& message) {
+void setLastCAPIErrorMessage(const std::string& message, lbug::common::ErrorCategory category) {
     lastCAPIErrorMessage = message;
+    lastCAPIErrorCategory = category;
+}
+
+void setLastCAPIErrorMessage(const std::exception& exception) {
+    setLastCAPIErrorMessage(exception.what(), lbug::common::classifyException(exception));
 }
 
 void clearLastCAPIErrorMessage() {
     lastCAPIErrorMessage.clear();
+    lastCAPIErrorCategory = lbug::common::ErrorCategory::NONE;
 }
 
 char* takeLastCAPIErrorMessage() {
@@ -78,6 +85,10 @@ char* convertToOwnedCString(const std::string& str) {
     memcpy(c_str, str.c_str(), src_len);
     c_str[src_len] = '\0';
     return c_str;
+}
+
+lbug_error_category lbug_get_last_error_category() {
+    return static_cast<lbug_error_category>(lastCAPIErrorCategory);
 }
 
 char* lbug_get_last_error() {

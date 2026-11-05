@@ -8,6 +8,7 @@
 #include <new>
 #include <type_traits>
 
+#include "common/exception/constraint.h"
 #include "common/exception/message.h"
 #include "common/exception/runtime.h"
 #include "common/serializer/buffer_reader.h"
@@ -800,7 +801,7 @@ void ArtPrimaryKeyIndex::commitInsert(transaction::Transaction*, const ValueVect
         const auto offset = nodeIDVector.readNodeOffset(nodeIDPos);
         const auto keyPos = keyVector.state->getSelVector()[i];
         if (keyVector.isNull(keyPos) && indexInfo.isPrimary) {
-            throw RuntimeException(ExceptionMessage::nullPKException());
+            throw ConstraintException(ExceptionMessage::nullPKException());
         }
         const auto key = ArtKey::encode(&keyVector, keyPos);
         if (key.empty()) {
@@ -811,7 +812,7 @@ void ArtPrimaryKeyIndex::commitInsert(transaction::Transaction*, const ValueVect
             continue;
         }
         if (!insertInternal(key, offset, artInsertState.isVisible)) {
-            throw RuntimeException(
+            throw ConstraintException(
                 ExceptionMessage::duplicatePKException(keyVector.getAsValue(keyPos)->toString()));
         }
     }

@@ -83,7 +83,8 @@ static lbug_state setQueryResult(std::unique_ptr<QueryResult> queryResult,
     outQueryResult->_query_result = queryResultPtr;
     outQueryResult->_is_owned_by_cpp = false;
     if (!queryResultPtr->isSuccess()) {
-        setLastCAPIErrorMessage(queryResultPtr->getErrorMessage());
+        setLastCAPIErrorMessage(queryResultPtr->getErrorMessage(),
+            queryResultPtr->getErrorCategory());
         return LbugError;
     }
     return LbugSuccess;
@@ -101,6 +102,7 @@ lbug_state lbug_connection_init(lbug_database* database, lbug_connection* out_co
     try {
         out_connection->_connection = new Connection(static_cast<Database*>(database->_database));
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         out_connection->_connection = nullptr;
         return LbugError;
     }
@@ -132,6 +134,7 @@ lbug_state lbug_connection_set_max_num_thread_for_exec(lbug_connection* connecti
     try {
         static_cast<Connection*>(connection->_connection)->setMaxNumThreadForExec(num_threads);
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -147,6 +150,7 @@ lbug_state lbug_connection_get_max_num_thread_for_exec(lbug_connection* connecti
     try {
         *out_result = static_cast<Connection*>(connection->_connection)->getMaxNumThreadForExec();
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -170,12 +174,13 @@ lbug_state lbug_connection_query(lbug_connection* connection, const char* query,
         out_query_result->_query_result = query_result;
         out_query_result->_is_owned_by_cpp = false;
         if (!query_result->isSuccess()) {
-            setLastCAPIErrorMessage(query_result->getErrorMessage());
+            setLastCAPIErrorMessage(query_result->getErrorMessage(),
+                query_result->getErrorCategory());
             return LbugError;
         }
         return LbugSuccess;
     } catch (Exception& e) {
-        setLastCAPIErrorMessage(e.what());
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -195,12 +200,16 @@ lbug_state lbug_connection_prepare(lbug_connection* connection, const char* quer
         if (prepared_statement == nullptr) {
             return LbugError;
         }
+        if (!prepared_statement->isSuccess()) {
+            setLastCAPIErrorMessage(prepared_statement->getErrorMessage(),
+                prepared_statement->getErrorCategory());
+        }
         out_prepared_statement->_prepared_statement = prepared_statement;
         out_prepared_statement->_bound_values =
             new std::unordered_map<std::string, std::unique_ptr<Value>>;
         return LbugSuccess;
     } catch (Exception& e) {
-        setLastCAPIErrorMessage(e.what());
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -239,12 +248,13 @@ lbug_state lbug_connection_execute(lbug_connection* connection,
         out_query_result->_query_result = query_result;
         out_query_result->_is_owned_by_cpp = false;
         if (!query_result->isSuccess()) {
-            setLastCAPIErrorMessage(query_result->getErrorMessage());
+            setLastCAPIErrorMessage(query_result->getErrorMessage(),
+                query_result->getErrorCategory());
             return LbugError;
         }
         return LbugSuccess;
     } catch (Exception& e) {
-        setLastCAPIErrorMessage(e.what());
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -270,7 +280,7 @@ lbug_state lbug_connection_create_arrow_table(lbug_connection* connection, const
         }
         return state;
     } catch (Exception& e) {
-        setLastCAPIErrorMessage(e.what());
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -298,7 +308,7 @@ lbug_state lbug_connection_create_arrow_rel_table(lbug_connection* connection,
         }
         return state;
     } catch (Exception& e) {
-        setLastCAPIErrorMessage(e.what());
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -331,7 +341,7 @@ lbug_state lbug_connection_create_arrow_rel_table_csr(lbug_connection* connectio
         }
         return state;
     } catch (Exception& e) {
-        setLastCAPIErrorMessage(e.what());
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -358,7 +368,7 @@ lbug_state lbug_connection_drop_arrow_table(lbug_connection* connection, const c
         }
         return state;
     } catch (Exception& e) {
-        setLastCAPIErrorMessage(e.what());
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     LBUG_C_API_GUARD_END(LbugError)
@@ -381,6 +391,7 @@ lbug_state lbug_connection_set_query_timeout(lbug_connection* connection, uint64
     try {
         static_cast<Connection*>(connection->_connection)->setQueryTimeOut(timeout_in_ms);
     } catch (Exception& e) {
+        setLastCAPIErrorMessage(e);
         return LbugError;
     }
     return LbugSuccess;
@@ -461,7 +472,7 @@ lbug_state lbug_connection_get_pushed_sql(lbug_connection* connection, const cha
         return LbugSuccess;
 
     } catch (Exception& e) {
-        setLastCAPIErrorMessage(e.what());
+        setLastCAPIErrorMessage(e);
         *out_sql = nullptr;
         return LbugError;
     }

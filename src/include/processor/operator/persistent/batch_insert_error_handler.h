@@ -10,13 +10,14 @@ namespace lbug {
 namespace processor {
 struct BatchInsertCachedError {
     explicit BatchInsertCachedError(std::string message,
-        const std::optional<WarningSourceData>& warningData = {});
+        const std::optional<WarningSourceData>& warningData = {}, bool isConstraint = false);
     BatchInsertCachedError() = default;
 
     std::string message;
 
     // CSV Reader data
     std::optional<WarningSourceData> warningData;
+    bool isConstraint = false;
 };
 
 class BatchInsertErrorHandler {
@@ -25,7 +26,8 @@ public:
         std::shared_ptr<common::row_idx_t> sharedErrorCounter = nullptr,
         std::mutex* sharedErrorCounterMtx = nullptr);
 
-    void handleError(std::string message, const std::optional<WarningSourceData>& warningData = {});
+    void handleError(std::string message, const std::optional<WarningSourceData>& warningData = {},
+        bool isConstraint = false);
 
     void handleError(BatchInsertCachedError error);
 

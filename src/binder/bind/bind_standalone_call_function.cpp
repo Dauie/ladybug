@@ -18,6 +18,7 @@ std::unique_ptr<BoundStatement> Binder::bindStandaloneCallFunction(
     auto& funcExpr =
         callStatement.getFunctionExpression()->constCast<parser::ParsedFunctionExpression>();
     auto funcName = funcExpr.getFunctionName();
+    clientContext->validateFunctionAllowed(funcName);
     auto catalog = catalog::Catalog::Get(*clientContext);
     auto transaction = transaction::Transaction::Get(*clientContext);
     auto entry =
