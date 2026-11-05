@@ -579,6 +579,16 @@ void Checkpointer::onWALRetired(bool) {}
 void Checkpointer::beforeGraphShadowApply(StorageManager&) {}
 
 void Checkpointer::logCheckpointAndApplyShadowPages(bool walRotated_) {
+    // A checkpoint writes the column chunks it adds straight to new pages of the data files;
+    // only the pages it changes go through the shadow file. The CHECKPOINT record below makes
+    // the shadowed header, which refers to those new pages, the committed state, so they must
+    // be durable first. Otherwise a power loss before applyShadowPages syncs the data file
+    // could leave the committed header pointing at pages that never reached the disk.
+    for (const auto& target : checkpointTargets) {
+        if (auto* dataFH = target.storageManager->getDataFH()) {
+            dataFH->getFileInfo()->syncFile();
+        }
+    }
     auto& shadowFile = mainStorageManager->getShadowFile();
     shadowFile.flushAll(mainStorageManager->getOrInitDatabaseID(clientContext));
     auto* vfs = common::VirtualFileSystem::GetUnsafe(clientContext);
