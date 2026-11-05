@@ -1,4 +1,6 @@
 #include <fstream>
+#include <optional>
+#include <string>
 
 #include "api_test/api_test.h"
 #include "api_test/private_api_test.h"
@@ -844,4 +846,51 @@ TEST_F(FailedCommitTest, KeepsCheckpointedRels) {
     EXPECT_EQ(countRels(), 2);
     ASSERT_TRUE(conn->query("CHECKPOINT")->isSuccess());
     EXPECT_EQ(countRels(), 2);
+}
+
+// A rollback that runs out of buffer pool memory must leave nothing of its transaction behind.
+// The transaction used to stay on the connection, and the next auto-commit statement committed
+// the rows the failed insert had added.
+TEST_F(EmptyDBTest, FailedRollbackOnAFullPoolLeavesNothingBehind) {
+    if (inMemMode) {
+        GTEST_SKIP();
+    }
+    // Uncheckpointed rows stay in memory, so committed inserts fill the pool.
+    systemConfig->bufferPoolSize = 8 * 1024 * 1024;
+    systemConfig->autoCheckpoint = false;
+    createDBAndConn();
+    ASSERT_TRUE(
+        conn->query("CREATE NODE TABLE Item(id INT64, name STRING, PRIMARY KEY(id))")->isSuccess());
+    int64_t committed = 0;
+    std::string error;
+    while (true) {
+        const auto result = conn->query(std::format(
+            "UNWIND range({}, {}) AS i CREATE (:Item {{id: i, name: 'item'}})", committed,
+            committed + 999));
+        if (!result->isSuccess()) {
+            error = result->getErrorMessage();
+            break;
+        }
+        committed += 1000;
+        ASSERT_LT(committed, 1000000);
+    }
+    EXPECT_NE(error.find("buffer pool is full"), std::string::npos) << error;
+    const auto count = [&]() -> std::optional<int64_t> {
+        const auto result = conn->query("MATCH (i:Item) RETURN count(*)");
+        if (!result->isSuccess()) {
+            return std::nullopt;
+        }
+        return result->getNext()->getValue(0)->getValue<int64_t>();
+    };
+    // Refused if the rollback failed, as it does on a pool this full.
+    if (const auto rows = count()) {
+        EXPECT_EQ(*rows, committed);
+    }
+
+    conn.reset();
+    database.reset();
+    systemConfig->bufferPoolSize = 64 * 1024 * 1024;
+    createDBAndConn();
+    EXPECT_EQ(count(), committed);
+    EXPECT_TRUE(conn->query("CREATE (:Item {id: -1, name: 'after'})")->isSuccess());
 }
