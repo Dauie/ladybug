@@ -57,6 +57,10 @@ private:
 Transaction* TransactionManager::beginTransaction(main::ClientContext& clientContext,
     TransactionType type) {
     std::unique_lock publicFunctionLck{mtxForSerializingPublicFunctionCalls};
+    if (rollbackFailed) {
+        throw TransactionManagerException(
+            "The database must be reopened, because a rollback failed: " + failedRollbackReason);
+    }
     // Only acquire the write gate for write/recovery transactions. Read-only transactions
     // can start freely during checkpoint since they use snapshot isolation.
     std::unique_lock newTransactionLck{mtxForStartingNewTransactions, std::defer_lock};
@@ -206,7 +210,31 @@ void TransactionManager::rollback(main::ClientContext& clientContext, transactio
     } break;
     case TransactionType::RECOVERY:
     case TransactionType::WRITE: {
-        transaction->rollback(&wal);
+        try {
+            transaction->rollback(&wal);
+        } catch (...) {
+            // A rollback can fail part way, as when undoing an insert needs memory from a full
+            // buffer pool. What it didn't undo must never be read, committed or checkpointed, so
+            // every later transaction and checkpoint is refused until the database reopens.
+            // Reopening drops this transaction, whose records have no COMMIT record, unless it
+            // is a commit that failed after its COMMIT record was written: that one it applies.
+            std::string reason = "unknown error";
+            try {
+                throw;
+            } catch (const std::exception& e) {
+                reason = e.what();
+            } catch (...) { // NOLINT(bugprone-empty-catch): The reason stays unknown.
+            }
+            rollbackFailed = true;
+            failedRollbackReason = reason;
+            wal.poison("A rollback failed: " + reason);
+            clearTransactionNoLock(transaction->getID());
+            activeWriteTransactionCount.fetch_sub(1, std::memory_order_release);
+            throw TransactionManagerException(
+                "The rollback failed, so the database refuses transactions until it is "
+                "reopened: " +
+                reason);
+        }
         clearTransactionNoLock(transaction->getID());
         activeWriteTransactionCount.fetch_sub(1, std::memory_order_release);
     } break;

@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -121,6 +122,11 @@ private:
     // writers during an auto-checkpoint triggered from commit()).
     std::atomic<common::transaction_t> lastTimestamp{1};
     uint64_t nextWALCommitSequenceToPublish = 1;
+    // Set once a rollback fails. Part of its transaction may still be in memory, so every
+    // transaction is refused until the database reopens. Guarded by
+    // mtxForSerializingPublicFunctionCalls.
+    bool rollbackFailed = false;
+    std::string failedRollbackReason;
     std::condition_variable cvForPublishingCommit;
     std::condition_variable cvForCommittingWriteTransaction;
     // This mutex serializes begin/commit/rollback calls to protect activeTransactions.

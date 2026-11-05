@@ -123,10 +123,13 @@ bool LocalNodeTable::addColumn(TableAddColumnState& addColumnState) {
 
 void LocalNodeTable::clear(MemoryManager& mm) {
     auto& nodeTable = dynamic_cast_checked<const NodeTable&>(table);
+    // A rollback clears tables, and an insert can fail because the buffer pool is full. Free
+    // the rows and the old index before the new index allocates, or the rollback fails too.
+    nodeGroups.clear();
+    hashIndex.reset();
     hashIndex = std::make_unique<LocalHashIndex>(mm,
         nodeTable.getColumn(nodeTable.getPKColumnID()).getDataType().getPhysicalType(),
         overflowFileHandle);
-    nodeGroups.clear();
 }
 
 bool LocalNodeTable::lookupPK(const Transaction* transaction, const ValueVector* keyVector,

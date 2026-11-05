@@ -73,8 +73,15 @@ void TransactionContext::rollback() {
     if (!hasActiveTransaction()) {
         return;
     }
-    clientContext.getDatabase()->getTransactionManager()->rollback(clientContext,
-        activeTransaction->getID());
+    try {
+        clientContext.getDatabase()->getTransactionManager()->rollback(clientContext,
+            activeTransaction->getID());
+    } catch (...) {
+        // A transaction left here would run the connection's next statement, and an
+        // auto-commit statement would commit it.
+        clearTransaction();
+        throw;
+    }
     clearTransaction();
 }
 
