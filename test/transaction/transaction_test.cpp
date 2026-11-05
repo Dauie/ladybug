@@ -848,10 +848,10 @@ TEST_F(FailedCommitTest, KeepsCheckpointedRels) {
     EXPECT_EQ(countRels(), 2);
 }
 
-// A rollback that runs out of buffer pool memory must leave nothing of its transaction behind.
-// The transaction used to stay on the connection, and the next auto-commit statement committed
-// the rows the failed insert had added.
-TEST_F(EmptyDBTest, FailedRollbackOnAFullPoolLeavesNothingBehind) {
+// An insert refused because the buffer pool is full must leave nothing behind. Its rollback used
+// to need memory from the same full pool and fail, and the transaction then stayed on the
+// connection, so the next auto-commit statement committed what the insert had added.
+TEST_F(EmptyDBTest, InsertRefusedOnAFullPoolLeavesNothingBehind) {
     if (inMemMode) {
         GTEST_SKIP();
     }
@@ -875,17 +875,13 @@ TEST_F(EmptyDBTest, FailedRollbackOnAFullPoolLeavesNothingBehind) {
         ASSERT_LT(committed, 1000000);
     }
     EXPECT_NE(error.find("buffer pool is full"), std::string::npos) << error;
-    const auto count = [&]() -> std::optional<int64_t> {
+    ASSERT_FALSE(hasActiveTransaction(*conn));
+    const auto count = [&]() {
         const auto result = conn->query("MATCH (i:Item) RETURN count(*)");
-        if (!result->isSuccess()) {
-            return std::nullopt;
-        }
-        return result->getNext()->getValue(0)->getValue<int64_t>();
+        EXPECT_TRUE(result->isSuccess()) << result->getErrorMessage();
+        return result->isSuccess() ? result->getNext()->getValue(0)->getValue<int64_t>() : -1;
     };
-    // Refused if the rollback failed, as it does on a pool this full.
-    if (const auto rows = count()) {
-        EXPECT_EQ(*rows, committed);
-    }
+    EXPECT_EQ(count(), committed);
 
     conn.reset();
     database.reset();
@@ -893,4 +889,67 @@ TEST_F(EmptyDBTest, FailedRollbackOnAFullPoolLeavesNothingBehind) {
     createDBAndConn();
     EXPECT_EQ(count(), committed);
     EXPECT_TRUE(conn->query("CREATE (:Item {id: -1, name: 'after'})")->isSuccess());
+}
+
+namespace {
+// Refuses every buffer reservation while failing is set.
+class FailingBufferManager final : public lbug::storage::BufferManager {
+public:
+    using lbug::storage::BufferManager::BufferManager;
+
+    bool reserve(uint64_t sizeToReserve) override {
+        return !failing && lbug::storage::BufferManager::reserve(sizeToReserve);
+    }
+
+    std::atomic<bool> failing = false;
+};
+} // namespace
+
+// A rollback that fails part way leaves changes of an uncommitted transaction in memory, so the
+// database refuses every transaction until it reopens, and reopening keeps every commit.
+TEST_F(EmptyDBTest, FailedRollbackRefusesTransactionsUntilReopen) {
+    if (inMemMode) {
+        GTEST_SKIP();
+    }
+    systemConfig->autoCheckpoint = false;
+    FailingBufferManager* bm = nullptr;
+    auto constructBM = [&](const lbug::main::Database& db) {
+        auto manager = std::make_unique<FailingBufferManager>(databasePath, databasePath + ".tmp",
+            systemConfig->bufferPoolSize, systemConfig->maxDBSize, getFileSystem(db),
+            systemConfig->readOnly);
+        bm = manager.get();
+        return manager;
+    };
+    database = BaseGraphTest::constructDB(databasePath, *systemConfig, constructBM);
+    conn = std::make_unique<lbug::main::Connection>(database.get());
+    ASSERT_TRUE(
+        conn->query("CREATE NODE TABLE Item(id INT64, name STRING, PRIMARY KEY(id))")->isSuccess());
+    ASSERT_TRUE(conn->query("CREATE (:Item {id: 1, name: 'kept'})")->isSuccess());
+    ASSERT_TRUE(conn->query("BEGIN TRANSACTION")->isSuccess());
+    ASSERT_TRUE(conn->query("CREATE (:Item {id: 2, name: 'rolled back'})")->isSuccess());
+    // Clearing the transaction's local table makes a new index, which needs a reservation.
+    getMemoryManager(*database)->releaseReusableBuffers();
+    bm->failing = true;
+    const auto rollback = conn->query("ROLLBACK");
+    bm->failing = false;
+    ASSERT_FALSE(rollback->isSuccess());
+    EXPECT_NE(rollback->getErrorMessage().find("rollback failed"), std::string::npos)
+        << rollback->getErrorMessage();
+    EXPECT_FALSE(hasActiveTransaction(*conn));
+    for (const auto* statement :
+        {"MATCH (i:Item) RETURN count(*)", "CREATE (:Item {id: 3, name: 'refused'})"}) {
+        const auto result = conn->query(statement);
+        EXPECT_FALSE(result->isSuccess()) << statement;
+        EXPECT_NE(result->getErrorMessage().find("must be reopened"), std::string::npos)
+            << result->getErrorMessage();
+    }
+
+    conn.reset();
+    database.reset();
+    createDBAndConn();
+    const auto ids = conn->query("MATCH (i:Item) RETURN i.id ORDER BY i.id");
+    ASSERT_TRUE(ids->isSuccess()) << ids->getErrorMessage();
+    ASSERT_EQ(ids->getNumTuples(), 1u);
+    EXPECT_EQ(ids->getNext()->getValue(0)->getValue<int64_t>(), 1);
+    EXPECT_TRUE(conn->query("CREATE (:Item {id: 4, name: 'after'})")->isSuccess());
 }

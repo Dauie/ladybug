@@ -107,7 +107,11 @@ ClientContext::~ClientContext() {
         return;
     }
     if (auto* transaction = Transaction::Get(*this)) {
-        getDatabase()->transactionManager->rollback(*this, transaction->getID());
+        try {
+            getDatabase()->transactionManager->rollback(*this, transaction->getID());
+        } catch (...) { // NOLINT(bugprone-empty-catch): A destructor can't throw, and a failed
+            // rollback has already made the database refuse transactions until it reopens.
+        }
     }
 }
 
